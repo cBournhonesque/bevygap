@@ -37,7 +37,13 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub fn new(name: String, version: String, host: String, host_url: String, spec_url: String) -> Monitor {
+    pub fn new(
+        name: String,
+        version: String,
+        host: String,
+        host_url: String,
+        spec_url: String,
+    ) -> Monitor {
         Monitor {
             name,
             version,
@@ -49,4 +55,3 @@ impl Monitor {
         }
     }
 }
-

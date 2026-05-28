@@ -34,7 +34,12 @@ pub struct PullProfileGetResponse {
 }
 
 impl PullProfileGetResponse {
-    pub fn new(name: String, source: String, source_type: SourceType, destination: String) -> PullProfileGetResponse {
+    pub fn new(
+        name: String,
+        source: String,
+        source_type: SourceType,
+        destination: String,
+    ) -> PullProfileGetResponse {
         PullProfileGetResponse {
             name,
             source,
@@ -59,4 +64,3 @@ impl Default for SourceType {
         Self::File
     }
 }
-

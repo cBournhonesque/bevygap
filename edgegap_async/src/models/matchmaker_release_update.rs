@@ -17,13 +17,22 @@ pub struct MatchmakerReleaseUpdate {
     #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     /// Name of the matchmaker component to use as the Open Match frontend.
-    #[serde(rename = "frontend_component_name", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "frontend_component_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub frontend_component_name: Option<String>,
     /// Name of the matchmaker component to use as the Open Match director.
-    #[serde(rename = "director_component_name", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "director_component_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub director_component_name: Option<String>,
     /// Name of the matchmaker component to use as the Open Match match function.
-    #[serde(rename = "match_function_component_name", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "match_function_component_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub match_function_component_name: Option<String>,
 }
 
@@ -37,4 +46,3 @@ impl MatchmakerReleaseUpdate {
         }
     }
 }
-

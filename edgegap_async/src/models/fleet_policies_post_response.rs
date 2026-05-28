@@ -43,7 +43,15 @@ pub struct FleetPoliciesPostResponse {
 }
 
 impl FleetPoliciesPostResponse {
-    pub fn new(name: String, enabled: bool, r#type: Type, minimum: i32, maximum: i32, threshold: f64, data: serde_json::Value) -> FleetPoliciesPostResponse {
+    pub fn new(
+        name: String,
+        enabled: bool,
+        r#type: Type,
+        minimum: i32,
+        maximum: i32,
+        threshold: f64,
+        data: serde_json::Value,
+    ) -> FleetPoliciesPostResponse {
         FleetPoliciesPostResponse {
             name,
             enabled,
@@ -73,4 +81,3 @@ impl Default for Type {
         Self::Location
     }
 }
-

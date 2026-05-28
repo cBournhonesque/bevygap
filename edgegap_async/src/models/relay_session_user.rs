@@ -20,9 +20,6 @@ pub struct RelaySessionUser {
 
 impl RelaySessionUser {
     pub fn new(ip: String) -> RelaySessionUser {
-        RelaySessionUser {
-            ip,
-        }
+        RelaySessionUser { ip }
     }
 }
-

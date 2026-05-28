@@ -31,7 +31,12 @@ pub struct MatchmakerComponentCreate {
 }
 
 impl MatchmakerComponentCreate {
-    pub fn new(name: String, repository: String, image: String, tag: String) -> MatchmakerComponentCreate {
+    pub fn new(
+        name: String,
+        repository: String,
+        image: String,
+        tag: String,
+    ) -> MatchmakerComponentCreate {
         MatchmakerComponentCreate {
             name,
             repository,
@@ -41,4 +46,3 @@ impl MatchmakerComponentCreate {
         }
     }
 }
-

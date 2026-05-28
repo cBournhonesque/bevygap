@@ -28,7 +28,12 @@ pub struct DeploymentAvailable {
 }
 
 impl DeploymentAvailable {
-    pub fn new(request_id: String, app_name: String, app_version: String, available_sockets: i32) -> DeploymentAvailable {
+    pub fn new(
+        request_id: String,
+        app_name: String,
+        app_version: String,
+        available_sockets: i32,
+    ) -> DeploymentAvailable {
         DeploymentAvailable {
             request_id,
             app_name,
@@ -37,4 +42,3 @@ impl DeploymentAvailable {
         }
     }
 }
-

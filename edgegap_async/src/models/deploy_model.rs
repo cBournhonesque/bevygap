@@ -28,7 +28,10 @@ pub struct DeployModel {
     /// The list of IP of your user with their location (latitude, longitude)
     #[serde(rename = "geo_ip_list", skip_serializing_if = "Option::is_none")]
     pub geo_ip_list: Option<Vec<models::GeoIpListModel>>,
-    #[serde(rename = "telemetry_profile_uuid_list", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "telemetry_profile_uuid_list",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub telemetry_profile_uuid_list: Option<Vec<String>>,
     /// A list of deployment variables
     #[serde(rename = "env_vars", skip_serializing_if = "Option::is_none")]
@@ -51,7 +54,10 @@ pub struct DeployModel {
     #[serde(rename = "region", skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
     /// DEPRECATED - See `filters` instead.
-    #[serde(rename = "administrative_division", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "administrative_division",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub administrative_division: Option<String>,
     /// A web URL. This url will be called with method POST. The deployment status will be send in JSON format
     #[serde(rename = "webhook_url", skip_serializing_if = "Option::is_none")]
@@ -59,7 +65,10 @@ pub struct DeployModel {
     /// The list of tags for your deployment
     #[serde(rename = "tags", skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
-    #[serde(rename = "container_log_storage", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "container_log_storage",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub container_log_storage: Option<Box<models::ContainerLogStorageModel>>,
     /// Filters to use while choosing the deployment location.
     #[serde(rename = "filters", skip_serializing_if = "Option::is_none")]
@@ -108,4 +117,3 @@ impl Default for ApSortStrategy {
         Self::Basic
     }
 }
-

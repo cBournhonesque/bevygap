@@ -20,9 +20,6 @@ pub struct LobbyTerminatePayload {
 
 impl LobbyTerminatePayload {
     pub fn new(name: String) -> LobbyTerminatePayload {
-        LobbyTerminatePayload {
-            name,
-        }
+        LobbyTerminatePayload { name }
     }
 }
-

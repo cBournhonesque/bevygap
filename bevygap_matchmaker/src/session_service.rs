@@ -1,12 +1,20 @@
 use crate::MatchmakerState;
 use async_nats::service::ServiceExt;
 use base64::prelude::*;
+use bevygap_shared::nats::{cert_digest_lookup_keys, nats_bucket_name};
 use edgegap_async::{apis::sessions_api::*, apis::Error as EdgegapError, models::SessionModel};
 use futures::StreamExt;
-use lightyear::prelude::ConnectToken;
+use lightyear::netcode::ConnectToken;
 use log::*;
 use serde::{de, Deserialize, Serialize};
 use std::net::SocketAddr;
+
+fn session_io_error(message: impl Into<String>) -> EdgegapError<SessionPostError> {
+    EdgegapError::Io(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        message.into(),
+    ))
+}
 
 #[derive(Deserialize, Debug)]
 struct SessionRequest {
@@ -62,7 +70,10 @@ pub async fn session_request_supervisor(state: &MatchmakerState) -> Result<(), a
 
 async fn session_request_handler(state: &MatchmakerState) -> Result<(), async_nats::Error> {
     let client = state.nats_client();
-    info!("Listening for session requests on 'session_requests'");
+    let service_name = nats_bucket_name("gensession");
+    let group_name = nats_bucket_name("session");
+    let endpoint_name = nats_bucket_name("gensession");
+    info!("Listening for legacy session requests on service '{service_name}', group '{group_name}', endpoint '{endpoint_name}'");
 
     // Uses the `service_builder` extension function to add a service definition to
     // the NATS client. As soon as `start` is called, the service is now visible
@@ -70,12 +81,12 @@ async fn session_request_handler(state: &MatchmakerState) -> Result<(), async_na
     let service = client
         .service_builder()
         .description("Generate sessions for clients who want to play")
-        .start("gensession", "0.0.1")
+        .start(service_name, "0.0.1".to_string())
         .await?;
 
-    let g = service.group_with_queue_group("session", "session_queue");
+    let g = service.group_with_queue_group(group_name, nats_bucket_name("session_queue"));
 
-    let mut gensession = g.endpoint("gensession").await?;
+    let mut gensession = g.endpoint(endpoint_name).await?;
 
     // Spawns a background loop that iterates over the stream of incoming requests. Note
     // that in order for service stats to update properly, you have to use the `respond`
@@ -88,10 +99,16 @@ async fn session_request_handler(state: &MatchmakerState) -> Result<(), async_na
             match decode_request(&request.message.payload) {
                 Ok(session_request) => match session_responder(&state, &session_request).await {
                     Ok(response) => {
-                        request
-                            .respond(Ok(serde_json::to_string(&response).unwrap().into()))
-                            .await
-                            .unwrap();
+                        let response = match serde_json::to_string(&response) {
+                            Ok(response) => response,
+                            Err(error) => {
+                                error!("Failed to serialize session response: {error}");
+                                continue;
+                            }
+                        };
+                        if let Err(error) = request.respond(Ok(response.into())).await {
+                            error!("Failed to respond to session request: {error}");
+                        }
                     }
 
                     Err(edgegap_async::apis::Error::ResponseError(e)) => {
@@ -103,41 +120,49 @@ async fn session_request_handler(state: &MatchmakerState) -> Result<(), async_na
                             _ => (999, "unknown error".to_string()),
                         };
                         error!("error in session_responder: {err_code}={err_msg}");
-                        request
+                        if let Err(error) = request
                             .respond(Err(async_nats::service::error::Error {
                                 status: err_msg,
                                 code: err_code,
                             }))
                             .await
-                            .unwrap();
+                        {
+                            error!("Failed to respond with Edgegap session error: {error}");
+                        }
                     }
                     Err(e) => {
                         error!("Unhandled error in session_responder: {:?}", e);
-                        request
+                        if let Err(error) = request
                             .respond(Err(async_nats::service::error::Error {
                                 status: format!("error generating session: {}", e),
                                 code: 500, // internal server error
                             }))
                             .await
-                            .unwrap();
+                        {
+                            error!("Failed to respond with session error: {error}");
+                        }
                     }
                 },
                 Err(e) => {
                     warn!("Error decoding session request: {}", e);
                     // TODO: not sure how to properly respond with an error here.
-                    request
+                    if let Err(error) = request
                         .respond(Err(async_nats::service::error::Error {
                             status: "error decoding session request!".to_string(),
                             code: 400, // bad request
                         }))
                         .await
-                        .unwrap();
+                    {
+                        error!("Failed to respond with decode error: {error}");
+                    }
                 }
             }
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|error| {
+        error!("Session request service task panicked or was cancelled: {error}");
+    });
 
     Ok(())
 }
@@ -223,7 +248,11 @@ async fn session_responder(
                 .kv_unclaimed_sessions()
                 .put(session_id_str, val)
                 .await
-                .expect("Failed to put session_id in unclaimed_sessions KV");
+                .map_err(|e| {
+                    session_io_error(format!(
+                        "Failed to put session_id in unclaimed_sessions KV: {e}"
+                    ))
+                })?;
         }
 
         if session_get.ready {
@@ -245,7 +274,9 @@ async fn session_responder(
     // We must wait until the session is ready / linked before telling the client to connect.
     // You can ask for a webhook, but for now we just poll until it's ready.
 
-    let deployment = session_get.deployment.expect("deployment not found");
+    let deployment = session_get
+        .deployment
+        .ok_or_else(|| session_io_error("deployment not found"))?;
 
     let Some(ports) = deployment.ports else {
         return Err(edgegap_async::apis::Error::Io(std::io::Error::new(
@@ -261,41 +292,62 @@ async fn session_responder(
     // use first port.
     // to support multiple, we'd need to store the name of the port mapping definition that we
     // use in edgegap, to look it up here.
-    let port = ports
+    let external_port = ports
         .iter()
         .next()
         .and_then(|(_, port_info)| port_info.external)
-        .expect("Couldn't get port");
+        .ok_or_else(|| session_io_error("No external port found in deployment"))?;
+    let port =
+        u16::try_from(external_port).map_err(|_| session_io_error("Invalid external port"))?;
 
     //  assign a new client_id
-    let client_id = rand::random();
+    let client_id: u64 = rand::random();
     info!("client_id = {client_id}");
 
     let public_ip_str = deployment.public_ip.as_str();
 
     let ip = public_ip_str
         .parse::<std::net::IpAddr>()
-        .expect("Failed parsing server ip");
+        .map_err(|e| session_io_error(format!("Failed parsing server ip {public_ip_str}: {e}")))?;
 
     // TODO once the session is ready, the cert digest should have been reported, but
     // there is definitely a race here so we should block on it for a second or so?
-    let cert_digest = state
-        .nats
-        .kv_cert_digests()
-        .get(public_ip_str)
-        .await
-        .expect("Failed to get cert digest from KV");
-    let cert_digest = String::from_utf8(cert_digest.unwrap().into())
-        .expect("Failed to convert cert digest to string");
+    let cert_digest_keys = cert_digest_lookup_keys(
+        Some(deployment.request_id.as_str()),
+        public_ip_str,
+        Some(port),
+    );
+    let mut cert_digest = None;
+    for key in &cert_digest_keys {
+        match state.nats.kv_cert_digests().get(key.as_str()).await {
+            Ok(Some(value)) => {
+                cert_digest = Some(String::from_utf8(value.into()).map_err(|e| {
+                    session_io_error(format!("Cert digest for key {key} is not utf8: {e}"))
+                })?);
+                break;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(session_io_error(format!(
+                    "Failed to get cert digest from KV for key {key}: {error}"
+                )));
+            }
+        }
+    }
+    let cert_digest = cert_digest.ok_or_else(|| {
+        session_io_error(format!(
+            "Failed to get cert digest from KV for keys: {}",
+            cert_digest_keys.join(",")
+        ))
+    })?;
 
     info!("Got cert digest {cert_digest} for {public_ip_str}");
 
-    let server_addresses = SocketAddr::new(ip, port as u16);
+    let server_addresses = SocketAddr::new(ip, port);
 
     info!(
-        "🏠 BUILD ConnectToken: server_addresses = {server_addresses} proto id: {}, client_id: {client_id}, privkey: {:?}",
-        state.settings.protocol_id(),
-        state.lightyear_private_key()
+        "🏠 BUILD ConnectToken: server_addresses = {server_addresses} proto id: {}, client_id: {client_id}",
+        state.settings.protocol_id()
     );
     let token = ConnectToken::build(
         server_addresses,
@@ -304,9 +356,11 @@ async fn session_responder(
         state.lightyear_private_key(),
     )
     .generate()
-    .expect("Failed to generate token");
+    .map_err(|e| session_io_error(format!("Failed to generate token: {e:?}")))?;
 
-    let token_bytes = token.try_into_bytes().expect("Failed to serialize token");
+    let token_bytes = token
+        .try_into_bytes()
+        .map_err(|e| session_io_error(format!("Failed to serialize token: {e:?}")))?;
     let token_base64 = BASE64_STANDARD.encode(token_bytes);
 
     // user-level code using lightyear doesn't even see the connect token, so we do the
@@ -346,7 +400,7 @@ async fn session_responder(
     let resp = SessionResponse {
         connect_token: token_base64,
         gameserver_ip: deployment.public_ip,
-        gameserver_port: port as u16,
+        gameserver_port: port,
         cert_digest,
     };
 

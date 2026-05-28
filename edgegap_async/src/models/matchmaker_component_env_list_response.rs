@@ -22,10 +22,6 @@ pub struct MatchmakerComponentEnvListResponse {
 
 impl MatchmakerComponentEnvListResponse {
     pub fn new(count: i32) -> MatchmakerComponentEnvListResponse {
-        MatchmakerComponentEnvListResponse {
-            count,
-            data: None,
-        }
+        MatchmakerComponentEnvListResponse { count, data: None }
     }
 }
-

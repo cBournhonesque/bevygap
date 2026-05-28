@@ -1,7 +1,11 @@
 use async_channel::{unbounded, Receiver, Sender, TryRecvError};
 use bevy::prelude::*;
-use bevy_async_task::AsyncTaskPool;
+#[cfg(target_arch = "wasm32")]
+use bevy::tasks::IoTaskPool;
 use futures_util::{select, FutureExt, SinkExt, StreamExt};
+#[cfg(not(target_arch = "wasm32"))]
+use log::error;
+use log::{debug, info};
 use tokio_tungstenite_wasm::CloseCode;
 
 pub mod prelude {
@@ -16,29 +20,55 @@ impl Plugin for NfwsPlugin {
     }
 }
 
-fn start_new_ws_tasks(
-    trigger: Trigger<OnAdd, NfwsHandle>,
-    mut task_pool: AsyncTaskPool<()>,
-    mut q: Query<&mut NfwsHandle>,
-) {
-    let mut wschan = q.get_mut(trigger.entity()).unwrap();
+fn start_new_ws_tasks(trigger: On<Add, NfwsHandle>, mut q: Query<&mut NfwsHandle>) {
+    let mut wschan = q.get_mut(trigger.entity).unwrap();
     let cmd_rx = wschan.cmd_rx.take().unwrap();
     let ev_tx = wschan.ev_tx.take().unwrap();
     let url = wschan.ws_url.clone();
-    debug!("spawned ws task for {:?}", trigger.entity());
-    task_pool.spawn(async move {
-        let ev_tx2 = ev_tx.clone();
-        let ret = connect_websocket(url, cmd_rx, ev_tx).await;
-        debug!("connect_websocket returned: {:?}", ret);
-        match ret {
-            Ok(()) => {
-                // a WsEvent::Closed should have been sent.
-            }
-            Err(err) => {
-                let _ = ev_tx2.send(NfwsEvent::Error(err)).await;
-            }
-        };
-    });
+    debug!("spawned ws task for {:?}", trigger.entity);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::Builder::new()
+            .name("bevy-nfws".to_string())
+            .spawn(move || {
+                let ev_tx2 = ev_tx.clone();
+                let runtime = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(err) => {
+                        error!("failed to build websocket tokio runtime: {err}");
+                        let _ = ev_tx2.try_send(NfwsEvent::Error(NfwsErr::Connecting));
+                        return;
+                    }
+                };
+                let ret = runtime.block_on(connect_websocket(url, cmd_rx, ev_tx));
+                debug!("connect_websocket returned: {:?}", ret);
+                if let Err(err) = ret {
+                    let _ = ev_tx2.try_send(NfwsEvent::Error(err));
+                }
+            })
+            .expect("failed to spawn websocket thread");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    IoTaskPool::get()
+        .spawn(async move {
+            let ev_tx2 = ev_tx.clone();
+            let ret = connect_websocket(url, cmd_rx, ev_tx).await;
+            debug!("connect_websocket returned: {:?}", ret);
+            match ret {
+                Ok(()) => {
+                    // a WsEvent::Closed should have been sent.
+                }
+                Err(err) => {
+                    let _ = ev_tx2.send(NfwsEvent::Error(err)).await;
+                }
+            };
+        })
+        .detach();
 }
 
 #[derive(Debug, Clone)]

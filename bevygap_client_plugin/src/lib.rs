@@ -2,7 +2,12 @@ use base64::prelude::*;
 use bevy::prelude::*;
 use bevy_nfws::prelude::*;
 use bevygap_shared::protocol::*;
-use lightyear::prelude::{client::*, *};
+use lightyear::netcode::auth::Authentication;
+use lightyear::netcode::client_plugin::NetcodeConfig;
+use lightyear::netcode::{ConnectToken, NetcodeClient};
+use lightyear::prelude::client::*;
+use lightyear::prelude::*;
+use log::{info, warn};
 use std::net::SocketAddr;
 
 pub mod prelude {
@@ -70,6 +75,13 @@ impl Default for BevygapClientConfig {
 
 pub struct BevygapClientPlugin;
 
+#[derive(Resource, Clone)]
+struct BevygapConnectInfo {
+    token: ConnectToken,
+    server_addr: SocketAddr,
+    certificate_digest: String,
+}
+
 impl Plugin for BevygapClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(NfwsPlugin);
@@ -108,7 +120,6 @@ fn request_token(
 fn handle_matchmaker_response(
     mut q: Query<(Entity, &mut NfwsHandle)>,
     mut commands: Commands,
-    mut client_config: ResMut<ClientConfig>,
     mut next_state: ResMut<NextState<BevygapClientState>>,
     config: Res<BevygapClientConfig>,
 ) {
@@ -121,7 +132,6 @@ fn handle_matchmaker_response(
             }
             NfwsPollResult::Empty => continue,
             NfwsPollResult::Event(rec) => {
-                info!("EV: {rec:?}");
                 match rec {
                     NfwsEvent::Connecting => {
                         info!("Matchmaker: {rec:?}");
@@ -158,6 +168,7 @@ fn handle_matchmaker_response(
                         warn!("Matchmaker: binary msg received, unhandled.");
                     }
                     NfwsEvent::TextMessage(msg) => {
+                        info!("Matchmaker: received text message ({} bytes)", msg.len());
                         let Ok(feedback) =
                             serde_json::from_slice::<SessionRequestFeedback>(msg.as_bytes())
                         else {
@@ -170,7 +181,7 @@ fn handle_matchmaker_response(
                             commands.entity(entity).despawn();
                             continue;
                         };
-                        info!(">>> {feedback:?}");
+                        info!("Matchmaker feedback: {feedback}");
                         match feedback {
                             SessionRequestFeedback::Acknowledged => {
                                 next_state.set(BevygapClientState::AwaitingResponse(
@@ -214,28 +225,11 @@ fn handle_matchmaker_response(
 
                                 info!("Got matchmaker response, game server: {server_addr:?}");
 
-                                if let NetConfig::Netcode { auth, io, .. } = &mut client_config.net
-                                {
-                                    info!("Setting Netcode connect token and server addr");
-                                    *auth = Authentication::Token(connect_token);
-                                    // inject gameserver address and port into lightyear client transport
-                                    // (preserves existing client_addr if it was already set)
-                                    let client_addr = match &mut io.transport {
-                                        client::ClientTransport::WebTransportClient {
-                                            client_addr,
-                                            ..
-                                        } => client_addr,
-                                        _ => panic!("Unsupported transport: {:?}", io.transport),
-                                    };
-                                    io.transport = client::ClientTransport::WebTransportClient {
-                                        client_addr: *client_addr,
-                                        server_addr,
-                                        #[cfg(target_family = "wasm")]
-                                        certificate_digest: cert_digest,
-                                    };
-                                } else {
-                                    panic!("Unsupported netconfig, only supports Netcode for now.");
-                                }
+                                commands.insert_resource(BevygapConnectInfo {
+                                    token: connect_token,
+                                    server_addr,
+                                    certificate_digest: cert_digest,
+                                });
                                 next_state.set(BevygapClientState::ReadyToConnect);
                             }
                         }
@@ -246,8 +240,47 @@ fn handle_matchmaker_response(
     }
 }
 
-fn connect_client(mut commands: Commands, mut next_state: ResMut<NextState<BevygapClientState>>) {
+fn connect_client(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<BevygapClientState>>,
+    connect_info: Res<BevygapConnectInfo>,
+    clients: Query<Entity, With<Client>>,
+) {
     info!("Connecting to server...");
-    commands.connect_client();
+    let mut iter = clients.iter();
+    let Some(client) = iter.next() else {
+        next_state.set(BevygapClientState::Error(
+            0,
+            "No Lightyear Client entity exists".to_string(),
+        ));
+        return;
+    };
+    if iter.next().is_some() {
+        warn!("Multiple Lightyear Client entities found; using the first one for Bevygap connect");
+    }
+    let netcode_config = NetcodeConfig {
+        client_timeout_secs: 3,
+        token_expire_secs: -1,
+        ..default()
+    };
+    let netcode = NetcodeClient::new(
+        Authentication::Token(connect_info.token.clone()),
+        netcode_config,
+    );
+    let Ok(netcode) = netcode else {
+        next_state.set(BevygapClientState::Error(
+            0,
+            "Failed to build Lightyear Netcode client".to_string(),
+        ));
+        return;
+    };
+    commands.entity(client).insert((
+        PeerAddr(connect_info.server_addr),
+        WebTransportClientIo {
+            certificate_digest: connect_info.certificate_digest.clone(),
+        },
+        netcode,
+    ));
+    commands.trigger(Connect { entity: client });
     next_state.set(BevygapClientState::Finished);
 }

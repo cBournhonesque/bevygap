@@ -34,7 +34,12 @@ pub struct EndpointStorageGetResponse {
 }
 
 impl EndpointStorageGetResponse {
-    pub fn new(name: String, access_key_id: String, endpoint: String, bucket: String) -> EndpointStorageGetResponse {
+    pub fn new(
+        name: String,
+        access_key_id: String,
+        endpoint: String,
+        bucket: String,
+    ) -> EndpointStorageGetResponse {
         EndpointStorageGetResponse {
             name,
             access_key_id,
@@ -45,4 +50,3 @@ impl EndpointStorageGetResponse {
         }
     }
 }
-

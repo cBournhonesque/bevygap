@@ -20,7 +20,10 @@ pub struct Application {
     #[serde(rename = "is_active")]
     pub is_active: bool,
     /// If the telemetry agent is installed on the versions of this app.
-    #[serde(rename = "is_telemetry_agent_active", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "is_telemetry_agent_active",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub is_telemetry_agent_active: Option<bool>,
     /// Image base64 string
     #[serde(rename = "image", skip_serializing_if = "Option::is_none")]
@@ -34,7 +37,12 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(name: String, is_active: bool, create_time: String, last_updated: String) -> Application {
+    pub fn new(
+        name: String,
+        is_active: bool,
+        create_time: String,
+        last_updated: String,
+    ) -> Application {
         Application {
             name,
             is_active,
@@ -45,4 +53,3 @@ impl Application {
         }
     }
 }
-

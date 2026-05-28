@@ -37,7 +37,15 @@ pub struct ApiModelLocation {
 }
 
 impl ApiModelLocation {
-    pub fn new(city: String, country: String, continent: String, administrative_division: String, timezone: String, latitude: f64, longitude: f64) -> ApiModelLocation {
+    pub fn new(
+        city: String,
+        country: String,
+        continent: String,
+        administrative_division: String,
+        timezone: String,
+        latitude: f64,
+        longitude: f64,
+    ) -> ApiModelLocation {
         ApiModelLocation {
             city,
             country,
@@ -49,4 +57,3 @@ impl ApiModelLocation {
         }
     }
 }
-

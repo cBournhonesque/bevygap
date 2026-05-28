@@ -155,10 +155,13 @@ impl TokioTasksRuntime {
     pub(crate) fn execute_main_thread_work(&mut self, world: &mut World, current_tick: usize) {
         // Running this single future which yields once allows the runtime to process tasks
         // if the runtime is a current_thread runtime. If its a multi-thread runtime then
-        // this isn't necessary but is harmless.
-        self.0.runtime.block_on(async {
-            tokio::task::yield_now().await;
-        });
+        // this isn't necessary but is harmless. If Bevy itself is running inside a Tokio runtime,
+        // calling block_on would panic, so skip the nudge in that case.
+        if tokio::runtime::Handle::try_current().is_err() {
+            self.0.runtime.block_on(async {
+                tokio::task::yield_now().await;
+            });
+        }
         while let Ok(runnable) = self.0.update_run_rx.try_recv() {
             let context = MainThreadContext {
                 world,

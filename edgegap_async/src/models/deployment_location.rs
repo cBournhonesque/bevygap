@@ -37,7 +37,15 @@ pub struct DeploymentLocation {
 }
 
 impl DeploymentLocation {
-    pub fn new(city: String, country: String, continent: String, administrative_division: String, timezone: String, latitude: f64, longitude: f64) -> DeploymentLocation {
+    pub fn new(
+        city: String,
+        country: String,
+        continent: String,
+        administrative_division: String,
+        timezone: String,
+        latitude: f64,
+        longitude: f64,
+    ) -> DeploymentLocation {
         DeploymentLocation {
             city,
             country,
@@ -49,4 +57,3 @@ impl DeploymentLocation {
         }
     }
 }
-

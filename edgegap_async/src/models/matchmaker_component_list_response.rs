@@ -21,11 +21,13 @@ pub struct MatchmakerComponentListResponse {
 }
 
 impl MatchmakerComponentListResponse {
-    pub fn new(count: i32, data: models::MatchmakerComponentResponse) -> MatchmakerComponentListResponse {
+    pub fn new(
+        count: i32,
+        data: models::MatchmakerComponentResponse,
+    ) -> MatchmakerComponentListResponse {
         MatchmakerComponentListResponse {
             count,
             data: Box::new(data),
         }
     }
 }
-

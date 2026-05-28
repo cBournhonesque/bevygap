@@ -26,7 +26,10 @@ pub struct SessionModel {
     #[serde(rename = "geo_ip_list", skip_serializing_if = "Option::is_none")]
     pub geo_ip_list: Option<Vec<models::GeoIpListModel>>,
     /// The request id of your deployment. If specified, the session will link to the deployment
-    #[serde(rename = "deployment_request_id", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "deployment_request_id",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deployment_request_id: Option<String>,
     #[serde(rename = "location", skip_serializing_if = "Option::is_none")]
     pub location: Option<Box<models::LocationModel>>,
@@ -40,7 +43,10 @@ pub struct SessionModel {
     #[serde(rename = "continent", skip_serializing_if = "Option::is_none")]
     pub continent: Option<String>,
     /// If you want your session in a specific administrative division
-    #[serde(rename = "administrative_division", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "administrative_division",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub administrative_division: Option<String>,
     /// If you want your session in a specific region
     #[serde(rename = "region", skip_serializing_if = "Option::is_none")]
@@ -48,7 +54,7 @@ pub struct SessionModel {
     /// List of Selectors to filter potential Deployment to link and tag the Session
     #[serde(rename = "selectors", skip_serializing_if = "Option::is_none")]
     pub selectors: Option<Vec<models::SelectorModel>>,
-    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url 
+    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url
     #[serde(rename = "webhook_url", skip_serializing_if = "Option::is_none")]
     pub webhook_url: Option<String>,
     /// List of location filters to apply to the session
@@ -80,4 +86,3 @@ impl SessionModel {
         }
     }
 }
-

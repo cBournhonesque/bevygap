@@ -25,7 +25,11 @@ pub struct DeploymentBulkStopFiltersPayload {
 }
 
 impl DeploymentBulkStopFiltersPayload {
-    pub fn new(field: Field, values: Vec<String>, filter_type: FilterType) -> DeploymentBulkStopFiltersPayload {
+    pub fn new(
+        field: Field,
+        values: Vec<String>,
+        filter_type: FilterType,
+    ) -> DeploymentBulkStopFiltersPayload {
         DeploymentBulkStopFiltersPayload {
             field,
             values,
@@ -63,4 +67,3 @@ impl Default for FilterType {
         Self::Any
     }
 }
-

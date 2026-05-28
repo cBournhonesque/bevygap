@@ -23,10 +23,6 @@ pub struct SelectorEnvModel {
 
 impl SelectorEnvModel {
     pub fn new(key: String, value: String) -> SelectorEnvModel {
-        SelectorEnvModel {
-            key,
-            value,
-        }
+        SelectorEnvModel { key, value }
     }
 }
-

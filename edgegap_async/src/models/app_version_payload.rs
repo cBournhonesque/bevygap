@@ -53,7 +53,10 @@ pub struct AppVersionPayload {
     #[serde(rename = "inject_context_env", skip_serializing_if = "Option::is_none")]
     pub inject_context_env: Option<bool>,
     /// ACL Protection is active
-    #[serde(rename = "whitelisting_active", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "whitelisting_active",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub whitelisting_active: Option<bool>,
     /// Allow faster deployment by caching your container image in every Edge site
     #[serde(rename = "force_cache", skip_serializing_if = "Option::is_none")]
@@ -68,7 +71,10 @@ pub struct AppVersionPayload {
     #[serde(rename = "time_to_deploy", skip_serializing_if = "Option::is_none")]
     pub time_to_deploy: Option<i32>,
     /// Enable every location available. By enabling this, your request will use every potential location, including those which may require a longer time to deploy. This means that your application could take significantly more time before being ready. We do not recommend this feature for live games. This functionality does not support ACL and Caching at the moment.
-    #[serde(rename = "enable_all_locations", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "enable_all_locations",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub enable_all_locations: Option<bool>,
     #[serde(rename = "session_config", skip_serializing_if = "Option::is_none")]
     pub session_config: Option<Box<models::AppVersionCreateSessionConfig>>,
@@ -82,7 +88,10 @@ pub struct AppVersionPayload {
     #[serde(rename = "verify_image", skip_serializing_if = "Option::is_none")]
     pub verify_image: Option<bool>,
     /// Termination grace period in seconds after the SIGTERM signal has been sent
-    #[serde(rename = "termination_grace_period_seconds", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "termination_grace_period_seconds",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub termination_grace_period_seconds: Option<i32>,
     /// The name of the endpoint storage to link
     #[serde(rename = "endpoint_storage", skip_serializing_if = "Option::is_none")]
@@ -93,7 +102,14 @@ pub struct AppVersionPayload {
 }
 
 impl AppVersionPayload {
-    pub fn new(name: String, docker_repository: String, docker_image: String, docker_tag: String, req_cpu: i32, req_memory: i32) -> AppVersionPayload {
+    pub fn new(
+        name: String,
+        docker_repository: String,
+        docker_image: String,
+        docker_tag: String,
+        req_cpu: i32,
+        req_memory: i32,
+    ) -> AppVersionPayload {
         AppVersionPayload {
             name,
             is_active: None,
@@ -125,4 +141,3 @@ impl AppVersionPayload {
         }
     }
 }
-

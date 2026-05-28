@@ -8,9 +8,10 @@ use axum::{
     extract::Query,
     response::IntoResponse,
 };
-use bevygap_shared::protocol::RequestSession;
+use bevygap_shared::nats::matchmaker_request_subject;
+use bevygap_shared::protocol::{RequestSession, SessionRequestFeedback};
 use log::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -114,7 +115,7 @@ async fn handle_socket_inner(
 
     let (game_name, game_ver) = request_session.game_name_and_version()?;
 
-    let subject = format!("matchmaker.request.{game_name}.{game_ver}");
+    let subject = matchmaker_request_subject(&game_name, &game_ver);
 
     // this should be safe because of our regex check on name and version..
     let payload = format!(
@@ -125,7 +126,10 @@ async fn handle_socket_inner(
 
     let client = state.bgnats.client().clone();
     let reply_inbox = client.new_inbox();
-    let mut response_subscriber = client.subscribe(reply_inbox.to_owned()).await.unwrap();
+    let mut response_subscriber = client
+        .subscribe(reply_inbox.to_owned())
+        .await
+        .map_err(|e| format!("Failed to subscribe for matchmaker response: {e}"))?;
     // TODO this publish needs to "opt in to no_responder messages" somehow, per
     // https://docs.nats.io/reference/reference-protocols/nats-protocol
     client
@@ -144,8 +148,12 @@ async fn handle_socket_inner(
             info!("got empty response, breaking");
             break;
         }
-        let chunk = String::from_utf8(msg.payload.to_vec()).unwrap();
-        info!("> {chunk}");
+        let chunk = String::from_utf8(msg.payload.to_vec())
+            .map_err(|e| format!("Matchmaker response was not utf8: {e}"))?;
+        match serde_json::from_str::<SessionRequestFeedback>(&chunk) {
+            Ok(feedback) => info!("> {feedback}"),
+            Err(_) => info!("> {} bytes", chunk.len()),
+        }
         if socket.send(Message::Text(chunk)).await.is_err() {
             return Err("Can't send chunk to ws client".to_string());
         }

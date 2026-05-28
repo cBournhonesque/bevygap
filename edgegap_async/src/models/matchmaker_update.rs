@@ -20,9 +20,6 @@ pub struct MatchmakerUpdate {
 
 impl MatchmakerUpdate {
     pub fn new() -> MatchmakerUpdate {
-        MatchmakerUpdate {
-            name: None,
-        }
+        MatchmakerUpdate { name: None }
     }
 }
-

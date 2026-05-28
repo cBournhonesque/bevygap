@@ -2,10 +2,11 @@ use crate::MatchmakerState;
 use async_nats::error::Error as NatsError;
 use async_nats::{Client, Subject};
 use base64::prelude::*;
+use bevygap_shared::nats::{cert_digest_lookup_keys, matchmaker_request_subject};
 use bevygap_shared::protocol::*;
 use edgegap_async::{apis::sessions_api::*, apis::Error as EdgegapError, models::SessionModel};
 use futures::StreamExt;
-use lightyear::prelude::ConnectToken;
+use lightyear::netcode::ConnectToken;
 use log::*;
 use serde::{de, Deserialize};
 use std::net::{IpAddr, SocketAddr};
@@ -55,15 +56,21 @@ impl ChunkResponder {
     async fn send(
         &self,
         feedback: SessionRequestFeedback,
-    ) -> Result<(), NatsError<async_nats::client::PublishErrorKind>> {
-        info!("sending feedback: {feedback:?}");
-        let payload = serde_json::to_string(&feedback).unwrap();
+    ) -> Result<(), MyError<SessionPostError>> {
+        info!("sending feedback: {feedback}");
+        let payload = serde_json::to_string(&feedback).map_err(|e| {
+            MyError::Bevygap(500, format!("failed to serialize matchmaker feedback: {e}"))
+        })?;
         self.client
             .publish(self.reply_to.clone(), payload.into())
-            .await
+            .await?;
+        Ok(())
     }
-    async fn finish(&self) -> Result<(), NatsError<async_nats::client::PublishErrorKind>> {
-        self.client.publish(self.reply_to.clone(), "".into()).await
+    async fn finish(&self) -> Result<(), MyError<SessionPostError>> {
+        self.client
+            .publish(self.reply_to.clone(), "".into())
+            .await?;
+        Ok(())
     }
 }
 
@@ -77,6 +84,10 @@ async fn stream_request_processor(
     // Sender for feedback responses, client will recieve multiple before the Finished one.
     info!("Generating streaming session for {session_request:?}");
     responder.send(SessionRequestFeedback::Acknowledged).await?;
+
+    if state.settings.mock_edgegap {
+        return mock_stream_request_processor(state, session_request, responder).await;
+    }
 
     let mut session_model = SessionModel::new(state.settings.app_name.clone());
     session_model.ip_list = Some(vec![session_request.client_ip.to_string()]);
@@ -136,7 +147,12 @@ async fn stream_request_processor(
             .kv_unclaimed_sessions()
             .put(session_id_str, val)
             .await
-            .expect("Failed to put session_id in unclaimed_sessions KV");
+            .map_err(|e| {
+                EdgegapError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to put session_id in unclaimed_sessions KV: {e}"),
+                ))
+            })?;
         // }
 
         if session_get.ready {
@@ -175,32 +191,37 @@ async fn stream_request_processor(
     // use first port.
     // to support multiple, we'd need to store the name of the port mapping definition that we
     // use in edgegap, to look it up here.
-    let port = ports
+    let external_port = ports
         .iter()
         .next()
         .and_then(|(_, port_info)| port_info.external)
-        .expect("Couldn't get port");
+        .ok_or_else(|| MyError::Bevygap(500, "No external port found in deployment".into()))?;
+    let port = u16::try_from(external_port)
+        .map_err(|_| MyError::Bevygap(500, format!("Invalid external port {external_port}")))?;
 
     //  assign a new client_id
-    let client_id = rand::random();
+    let client_id: u64 = rand::random();
     // info!("client_id = {client_id}");
 
     let public_ip_str = deployment.public_ip.as_str();
 
-    let ip = public_ip_str
-        .parse::<std::net::IpAddr>()
-        .expect("Failed parsing server ip");
+    let ip = public_ip_str.parse::<std::net::IpAddr>().map_err(|e| {
+        MyError::Bevygap(
+            500,
+            format!("Failed parsing server ip {public_ip_str}: {e}"),
+        )
+    })?;
 
     // TODO once the session is ready, the cert digest should have been reported, but
     // there is definitely a race here so we should block on it for a second or so?
-    let cert_digest = lookup_cert_digest(state, &ip).await?;
+    let cert_digest =
+        lookup_cert_digest(state, Some(deployment.request_id.as_str()), &ip, Some(port)).await?;
 
-    let server_addresses = SocketAddr::new(ip, port as u16);
+    let server_addresses = SocketAddr::new(ip, port);
 
     info!(
-        "🏠 BUILD ConnectToken: server_addresses = {server_addresses} proto id: {}, client_id: {client_id}, privkey: {:?}",
-        state.settings.protocol_id(),
-        state.lightyear_private_key()
+        "🏠 BUILD ConnectToken: server_addresses = {server_addresses} proto id: {}, client_id: {client_id}",
+        state.settings.protocol_id()
     );
     let token = ConnectToken::build(
         server_addresses,
@@ -209,9 +230,11 @@ async fn stream_request_processor(
         state.lightyear_private_key(),
     )
     .generate()
-    .expect("Failed to generate token");
+    .map_err(|e| MyError::Bevygap(500, format!("Failed to generate token: {e:?}")))?;
 
-    let token_bytes = token.try_into_bytes().expect("Failed to serialize token");
+    let token_bytes = token
+        .try_into_bytes()
+        .map_err(|e| MyError::Bevygap(500, format!("Failed to serialize token: {e:?}")))?;
     let token_base64 = BASE64_STANDARD.encode(token_bytes);
 
     register_ids_in_nats(state, client_id.to_string(), session_get.session_id).await?;
@@ -220,11 +243,92 @@ async fn stream_request_processor(
         .send(SessionRequestFeedback::SessionReady {
             token: token_base64,
             ip: deployment.public_ip,
-            port: port as u16,
+            port,
             cert_digest,
         })
         .await?;
     // send an empty chunk to finish:
+    responder.finish().await?;
+    Ok(())
+}
+
+async fn mock_stream_request_processor(
+    state: &MatchmakerState,
+    session_request: SessionRequest,
+    responder: &ChunkResponder,
+) -> Result<(), MyError<SessionPostError>> {
+    let client_id: u64 = rand::random();
+    let session_id = format!("{}-{client_id}", state.settings.mock_session_id_prefix);
+    let public_ip = state.settings.mock_public_ip.clone();
+    let port = state.settings.mock_external_port;
+
+    info!(
+        "Using mock Edgegap session {session_id} for client_ip={}, server={public_ip}:{port}",
+        session_request.client_ip
+    );
+    responder
+        .send(SessionRequestFeedback::SessionRequestAccepted(
+            session_id.clone(),
+        ))
+        .await?;
+
+    if state.settings.mock_ready_delay_ms > 0 {
+        responder
+            .send(SessionRequestFeedback::ProgressReport(
+                "mock session starting".to_string(),
+            ))
+            .await?;
+        tokio::time::sleep(Duration::from_millis(state.settings.mock_ready_delay_ms)).await;
+    }
+
+    state
+        .nats
+        .kv_unclaimed_sessions()
+        .put(session_id.clone(), session_id.clone().into())
+        .await
+        .map_err(|e| {
+            EdgegapError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to put mock session in unclaimed_sessions KV: {e}"),
+            ))
+        })?;
+
+    let ip = public_ip
+        .parse::<IpAddr>()
+        .map_err(|e| MyError::Bevygap(500, format!("invalid mock public ip {public_ip}: {e}")))?;
+    let mock_request_id = (!state.settings.mock_deployment_request_id.trim().is_empty())
+        .then_some(state.settings.mock_deployment_request_id.as_str());
+    let cert_digest = lookup_cert_digest(state, mock_request_id, &ip, Some(port)).await?;
+    let server_address = SocketAddr::new(ip, port);
+
+    info!(
+        "BUILD mock ConnectToken: server_address={server_address} proto id: {}, client_id: {client_id}",
+        state.settings.protocol_id()
+    );
+    let token = ConnectToken::build(
+        server_address,
+        state.settings.protocol_id(),
+        client_id,
+        state.lightyear_private_key(),
+    )
+    .generate()
+    .map_err(|e| MyError::Bevygap(500, format!("Failed to generate mock token: {e:?}")))?;
+
+    let token_bytes = token
+        .try_into_bytes()
+        .map_err(|e| MyError::Bevygap(500, format!("Failed to serialize mock token: {e:?}")))?;
+    let token_base64 = BASE64_STANDARD.encode(token_bytes);
+
+    register_ids_in_nats(state, client_id.to_string(), session_id).await?;
+
+    responder
+        .send(SessionRequestFeedback::SessionReady {
+            token: token_base64,
+            ip: public_ip,
+            port,
+            cert_digest,
+        })
+        .await?;
     responder.finish().await?;
     Ok(())
 }
@@ -262,20 +366,44 @@ async fn register_ids_in_nats(
 
 async fn lookup_cert_digest(
     state: &MatchmakerState,
+    request_id: Option<&str>,
     public_ip: &IpAddr,
+    external_port: Option<u16>,
 ) -> Result<String, MyError<SessionPostError>> {
     let ip_str = public_ip.to_string();
-    match state.nats.kv_cert_digests().get(ip_str).await {
-        Ok(Some(cert_digest)) => Ok(String::from_utf8(cert_digest.into()).unwrap()),
-        Ok(None) => Err(MyError::Bevygap(500, "No cert digest found".into())),
-        Err(e) => {
-            error!("err getting digest for {public_ip}: {e:?}");
-            Err(MyError::Bevygap(
-                500,
-                "Error'ed on lookup for cert_digest".into(),
-            ))
+    let lookup_keys = cert_digest_lookup_keys(request_id, ip_str.as_str(), external_port);
+    info!(
+        "Looking up cert digest with keys: {}",
+        lookup_keys.join(",")
+    );
+    for key in &lookup_keys {
+        match state.nats.kv_cert_digests().get(key.as_str()).await {
+            Ok(Some(cert_digest)) => {
+                let cert_digest = String::from_utf8(cert_digest.into()).map_err(|e| {
+                    MyError::Bevygap(
+                        500,
+                        format!("Cert digest value for key {key} is not utf8: {e}"),
+                    )
+                })?;
+                info!("Got cert digest for key {key}");
+                return Ok(cert_digest);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                error!("err getting digest for key {key}: {e:?}");
+                return Err(MyError::Bevygap(
+                    500,
+                    "Error'ed on lookup for cert_digest".into(),
+                ));
+            }
         }
     }
+    Err(MyError::Bevygap(
+        500,
+        format!(
+            "No cert digest found for public_ip={public_ip}, external_port={external_port:?}, request_id={request_id:?}"
+        ),
+    ))
 }
 
 /// Subscribes to "matchmaker.request" and processes the session request stream.
@@ -290,10 +418,7 @@ pub(crate) async fn streaming_session_request_handler(
 ) -> Result<(), async_nats::Error> {
     let client = state.nats_client().clone();
 
-    let subject = format!(
-        "matchmaker.request.{}.{}",
-        state.settings.app_name, state.settings.app_version
-    );
+    let subject = matchmaker_request_subject(&state.settings.app_name, &state.settings.app_version);
     info!("Listening for session requests on '{subject}'");
 
     let mut sub = client.subscribe(subject).await?;
@@ -314,10 +439,15 @@ pub(crate) async fn streaming_session_request_handler(
             Ok(request) => request,
             Err(e) => {
                 let err_response = format!("ERROR decoding session request {e:?}");
-                responder
+                if let Err(error) = responder
                     .send(SessionRequestFeedback::Error(500, err_response))
-                    .await?;
-                responder.finish().await?;
+                    .await
+                {
+                    error!("Failed to send request-decode error to requester: {error:?}");
+                }
+                if let Err(error) = responder.finish().await {
+                    error!("Failed to finish request-decode response: {error:?}");
+                }
                 continue;
             }
         };

@@ -22,10 +22,6 @@ pub struct MatchmakerListResponse {
 
 impl MatchmakerListResponse {
     pub fn new(count: i32, data: Vec<models::MatchmakerResponse>) -> MatchmakerListResponse {
-        MatchmakerListResponse {
-            count,
-            data,
-        }
+        MatchmakerListResponse { count, data }
     }
 }
-

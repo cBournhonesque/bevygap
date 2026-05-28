@@ -35,7 +35,15 @@ pub struct MatchmakerComponentResponse {
 }
 
 impl MatchmakerComponentResponse {
-    pub fn new(created_at: String, updated_at: String, name: String, repository: String, image: String, tag: String, credentials: serde_json::Value) -> MatchmakerComponentResponse {
+    pub fn new(
+        created_at: String,
+        updated_at: String,
+        name: String,
+        repository: String,
+        image: String,
+        tag: String,
+        credentials: serde_json::Value,
+    ) -> MatchmakerComponentResponse {
         MatchmakerComponentResponse {
             created_at,
             updated_at,
@@ -47,4 +55,3 @@ impl MatchmakerComponentResponse {
         }
     }
 }
-

@@ -26,7 +26,10 @@ pub struct AppVersionUpdateSessionConfig {
     #[serde(rename = "empty_ttl", skip_serializing_if = "Option::is_none")]
     pub empty_ttl: Option<i32>,
     /// The number of minutes after a session-type deployment has been terminated to remove all the session information connected to your deployment. Minimum and default value is set to 60 minutes so you can manage your session termination before it is removed.
-    #[serde(rename = "session_max_duration", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "session_max_duration",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub session_max_duration: Option<i32>,
 }
 
@@ -57,4 +60,3 @@ impl Default for Kind {
         Self::Default
     }
 }
-

@@ -80,7 +80,19 @@ pub struct Status {
 }
 
 impl Status {
-    pub fn new(request_id: String, fqdn: String, app_name: String, app_version: String, current_status: String, running: bool, whitelisting_active: bool, start_time: String, elapsed_time: i32, error: bool, public_ip: String) -> Status {
+    pub fn new(
+        request_id: String,
+        fqdn: String,
+        app_name: String,
+        app_version: String,
+        current_status: String,
+        running: bool,
+        whitelisting_active: bool,
+        start_time: String,
+        elapsed_time: i32,
+        error: bool,
+        public_ip: String,
+    ) -> Status {
         Status {
             request_id,
             fqdn,
@@ -107,4 +119,3 @@ impl Status {
         }
     }
 }
-

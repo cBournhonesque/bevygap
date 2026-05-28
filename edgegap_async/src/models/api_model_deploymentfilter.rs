@@ -25,7 +25,11 @@ pub struct ApiModelDeploymentfilter {
 }
 
 impl ApiModelDeploymentfilter {
-    pub fn new(field: Field, values: Vec<String>, filter_type: FilterType) -> ApiModelDeploymentfilter {
+    pub fn new(
+        field: Field,
+        values: Vec<String>,
+        filter_type: FilterType,
+    ) -> ApiModelDeploymentfilter {
         ApiModelDeploymentfilter {
             field,
             values,
@@ -71,4 +75,3 @@ impl Default for FilterType {
         Self::Any
     }
 }
-

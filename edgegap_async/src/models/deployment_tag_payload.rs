@@ -20,9 +20,6 @@ pub struct DeploymentTagPayload {
 
 impl DeploymentTagPayload {
     pub fn new(name: String) -> DeploymentTagPayload {
-        DeploymentTagPayload {
-            name,
-        }
+        DeploymentTagPayload { name }
     }
 }
-

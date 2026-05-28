@@ -20,9 +20,6 @@ pub struct LobbyDeployPayload {
 
 impl LobbyDeployPayload {
     pub fn new(name: String) -> LobbyDeployPayload {
-        LobbyDeployPayload {
-            name,
-        }
+        LobbyDeployPayload { name }
     }
 }
-

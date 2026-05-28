@@ -25,7 +25,11 @@ pub struct SessionBulkStopFiltersPayload {
 }
 
 impl SessionBulkStopFiltersPayload {
-    pub fn new(field: Field, values: Vec<String>, filter_type: FilterType) -> SessionBulkStopFiltersPayload {
+    pub fn new(
+        field: Field,
+        values: Vec<String>,
+        filter_type: FilterType,
+    ) -> SessionBulkStopFiltersPayload {
         SessionBulkStopFiltersPayload {
             field,
             values,
@@ -65,4 +69,3 @@ impl Default for FilterType {
         Self::Any
     }
 }
-

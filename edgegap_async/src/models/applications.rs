@@ -19,9 +19,6 @@ pub struct Applications {
 
 impl Applications {
     pub fn new() -> Applications {
-        Applications {
-            applications: None,
-        }
+        Applications { applications: None }
     }
 }
-

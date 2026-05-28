@@ -20,9 +20,6 @@ pub struct PatchSessionModel {
 
 impl PatchSessionModel {
     pub fn new(ip_list: Vec<String>) -> PatchSessionModel {
-        PatchSessionModel {
-            ip_list,
-        }
+        PatchSessionModel { ip_list }
     }
 }
-

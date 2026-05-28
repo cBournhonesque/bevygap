@@ -20,9 +20,6 @@ pub struct IpAddressesLookupResponse {
 
 impl IpAddressesLookupResponse {
     pub fn new(addresses: Vec<models::IpAddressLookupResponse>) -> IpAddressesLookupResponse {
-        IpAddressesLookupResponse {
-            addresses,
-        }
+        IpAddressesLookupResponse { addresses }
     }
 }
-

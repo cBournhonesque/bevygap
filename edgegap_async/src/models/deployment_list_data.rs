@@ -40,12 +40,21 @@ pub struct DeploymentListData {
     #[serde(rename = "sockets_usage", skip_serializing_if = "Option::is_none")]
     pub sockets_usage: Option<i32>,
     /// If the deployment is joinable by sessions
-    #[serde(rename = "is_joinable_by_session", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "is_joinable_by_session",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub is_joinable_by_session: Option<bool>,
 }
 
 impl DeploymentListData {
-    pub fn new(request_id: String, fqdn: String, start_time: String, ready: bool, public_ip: String) -> DeploymentListData {
+    pub fn new(
+        request_id: String,
+        fqdn: String,
+        start_time: String,
+        ready: bool,
+        public_ip: String,
+    ) -> DeploymentListData {
         DeploymentListData {
             request_id,
             fqdn,
@@ -60,4 +69,3 @@ impl DeploymentListData {
         }
     }
 }
-

@@ -4,6 +4,8 @@
 use crate::arbitrium_env::ArbitriumEnv;
 use crate::bevy_tokio_tasks::TokioTasksRuntime;
 use bevy::prelude::*;
+use log::{error, info};
+use serde_json::{Map, Value};
 
 #[derive(Event)]
 pub(crate) struct ContextLoaded;
@@ -14,6 +16,31 @@ pub struct ArbitriumContext {
 }
 
 impl ArbitriumContext {
+    pub fn from_local_env(env: &ArbitriumEnv) -> Self {
+        let location = serde_json::from_str::<Value>(&env.deployment_location)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_else(|| {
+                let mut location = Map::new();
+                location.insert("city".to_string(), Value::String("Local".to_string()));
+                location.insert("country".to_string(), Value::String("Dev".to_string()));
+                location
+            });
+        let ports = serde_json::from_str::<Value>(&env.ports_mapping)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_else(Map::new);
+
+        let mut context = Map::new();
+        context.insert("request_id".into(), Value::String(env.request_id.clone()));
+        context.insert("public_ip".into(), Value::String(env.public_ip.clone()));
+        context.insert("fqdn".into(), Value::String("localhost".to_string()));
+        context.insert("sockets".into(), Value::Number(1.into()));
+        context.insert("location".into(), Value::Object(location));
+        context.insert("ports".into(), Value::Object(ports));
+        Self { context }
+    }
+
     pub fn location(&self) -> String {
         let location = self
             .context
@@ -44,9 +71,9 @@ impl ArbitriumContext {
     pub fn top_level_string(&self, key: &str) -> String {
         self.context
             .get(key)
-            .expect("Missing {str} key in context")
+            .unwrap_or_else(|| panic!("Missing {key} key in context"))
             .as_str()
-            .expect("{str} is not a string")
+            .unwrap_or_else(|| panic!("{key} is not a string"))
             .to_string()
     }
 
@@ -60,6 +87,13 @@ impl ArbitriumContext {
 
     pub fn fqdn(&self) -> String {
         self.top_level_string("fqdn")
+    }
+
+    pub fn game_external_port(&self) -> Option<u16> {
+        let ports = self.context.get("ports")?.as_object()?;
+        let port_info = ports.get("game").or_else(|| ports.values().next())?;
+        let external = port_info.get("external")?.as_u64()?;
+        u16::try_from(external).ok()
     }
 }
 
@@ -81,10 +115,23 @@ async fn fetch_context_from_api(
 }
 
 pub fn fetch_context_on_nats_connected(
-    _trigger: Trigger<crate::plugin::NatsConnected>,
+    _trigger: On<crate::plugin::NatsConnected>,
     runtime: ResMut<TokioTasksRuntime>,
     arb_env: Res<ArbitriumEnv>,
 ) {
+    if arb_env.local_context {
+        let arb_context = ArbitriumContext::from_local_env(&arb_env);
+        info!("Using local mock Edgegap context: {arb_context:?}");
+        runtime.spawn_background_task(|mut ctx| async move {
+            ctx.run_on_main_thread(move |ctx| {
+                ctx.world.insert_resource(arb_context);
+                ctx.world.trigger(ContextLoaded);
+            })
+            .await;
+        });
+        return;
+    }
+
     let context_url = arb_env.context_url.clone();
     let context_token = arb_env.context_token.clone();
     info!("Fetching context: {context_url} ::::  {context_token}");
@@ -110,4 +157,30 @@ pub fn fetch_context_on_nats_connected(
         })
         .await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_context_contains_expected_endpoint() {
+        let env = ArbitriumEnv {
+            request_id: "local-lightrider".to_string(),
+            delete_url: "local-mock://delete".to_string(),
+            delete_token: "token".to_string(),
+            deployment_location: r#"{"city":"Local","country":"Dev"}"#.to_string(),
+            context_url: "local-mock://context".to_string(),
+            context_token: "token".to_string(),
+            public_ip: "127.0.0.1".to_string(),
+            ports_mapping: r#"{"game":{"internal":7777,"external":30090,"protocol":"UDP"}}"#
+                .to_string(),
+            local_context: true,
+        };
+
+        let context = ArbitriumContext::from_local_env(&env);
+        assert_eq!(context.request_id(), "local-lightrider");
+        assert_eq!(context.public_ip(), "127.0.0.1");
+        assert_eq!(context.game_external_port(), Some(30090));
+    }
 }

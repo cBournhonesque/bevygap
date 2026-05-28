@@ -23,10 +23,6 @@ pub struct Tag {
 
 impl Tag {
     pub fn new(key: String, value: String) -> Tag {
-        Tag {
-            key,
-            value,
-        }
+        Tag { key, value }
     }
 }
-

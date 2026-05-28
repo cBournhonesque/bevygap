@@ -17,7 +17,10 @@ pub struct MatchmakerManagedReleaseUpdate {
     #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     /// Name of the matchmaker release configuration to use for this managed release.
-    #[serde(rename = "release_config_name", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "release_config_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub release_config_name: Option<String>,
 }
 
@@ -29,4 +32,3 @@ impl MatchmakerManagedReleaseUpdate {
         }
     }
 }
-

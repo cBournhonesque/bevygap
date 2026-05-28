@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeploymentUpdatePayload {
     /// Whether a session can connect to this deployment or not.
-    #[serde(rename = "is_joinable_by_session", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "is_joinable_by_session",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub is_joinable_by_session: Option<bool>,
 }
 
@@ -25,4 +28,3 @@ impl DeploymentUpdatePayload {
         }
     }
 }
-

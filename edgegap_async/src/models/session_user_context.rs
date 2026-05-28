@@ -20,9 +20,6 @@ pub struct SessionUserContext {
 
 impl SessionUserContext {
     pub fn new(session_users: Vec<models::SessionUser>) -> SessionUserContext {
-        SessionUserContext {
-            session_users,
-        }
+        SessionUserContext { session_users }
     }
 }
-

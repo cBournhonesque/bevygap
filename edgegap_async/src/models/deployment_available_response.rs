@@ -21,11 +21,13 @@ pub struct DeploymentAvailableResponse {
 }
 
 impl DeploymentAvailableResponse {
-    pub fn new(data: Vec<models::DeploymentAvailable>, pagination: models::Pagination) -> DeploymentAvailableResponse {
+    pub fn new(
+        data: Vec<models::DeploymentAvailable>,
+        pagination: models::Pagination,
+    ) -> DeploymentAvailableResponse {
         DeploymentAvailableResponse {
             data,
             pagination: Box::new(pagination),
         }
     }
 }
-

@@ -19,9 +19,6 @@ pub struct ImageTagList {
 
 impl ImageTagList {
     pub fn new() -> ImageTagList {
-        ImageTagList {
-            data: None,
-        }
+        ImageTagList { data: None }
     }
 }
-

@@ -35,15 +35,25 @@ pub struct SessionContext {
     #[serde(rename = "user_count")]
     pub user_count: i32,
     /// Unique UUID
-    #[serde(rename = "deployment_request_id", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "deployment_request_id",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deployment_request_id: Option<String>,
-    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url 
+    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url
     #[serde(rename = "webhook_url", skip_serializing_if = "Option::is_none")]
     pub webhook_url: Option<String>,
 }
 
 impl SessionContext {
-    pub fn new(session_id: String, status: String, ready: bool, linked: bool, kind: String, user_count: i32) -> SessionContext {
+    pub fn new(
+        session_id: String,
+        status: String,
+        ready: bool,
+        linked: bool,
+        kind: String,
+        user_count: i32,
+    ) -> SessionContext {
         SessionContext {
             session_id,
             custom_id: None,
@@ -57,4 +67,3 @@ impl SessionContext {
         }
     }
 }
-

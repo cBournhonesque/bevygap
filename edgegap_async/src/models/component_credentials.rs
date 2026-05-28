@@ -23,10 +23,6 @@ pub struct ComponentCredentials {
 
 impl ComponentCredentials {
     pub fn new(username: String, token: String) -> ComponentCredentials {
-        ComponentCredentials {
-            username,
-            token,
-        }
+        ComponentCredentials { username, token }
     }
 }
-

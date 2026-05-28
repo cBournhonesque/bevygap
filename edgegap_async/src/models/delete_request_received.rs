@@ -20,9 +20,6 @@ pub struct DeleteRequestReceived {
 
 impl DeleteRequestReceived {
     pub fn new(message: String) -> DeleteRequestReceived {
-        DeleteRequestReceived {
-            message,
-        }
+        DeleteRequestReceived { message }
     }
 }
-

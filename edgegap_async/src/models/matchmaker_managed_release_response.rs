@@ -32,7 +32,14 @@ pub struct MatchmakerManagedReleaseResponse {
 }
 
 impl MatchmakerManagedReleaseResponse {
-    pub fn new(created_at: String, updated_at: String, app_name: String, version_name: String, version: String, release_config_name: String) -> MatchmakerManagedReleaseResponse {
+    pub fn new(
+        created_at: String,
+        updated_at: String,
+        app_name: String,
+        version_name: String,
+        version: String,
+        release_config_name: String,
+    ) -> MatchmakerManagedReleaseResponse {
         MatchmakerManagedReleaseResponse {
             created_at,
             updated_at,
@@ -43,4 +50,3 @@ impl MatchmakerManagedReleaseResponse {
         }
     }
 }
-

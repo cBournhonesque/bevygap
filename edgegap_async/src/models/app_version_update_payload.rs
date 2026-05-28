@@ -50,7 +50,10 @@ pub struct AppVersionUpdatePayload {
     #[serde(rename = "inject_context_env", skip_serializing_if = "Option::is_none")]
     pub inject_context_env: Option<bool>,
     /// ACL Protection is active
-    #[serde(rename = "whitelisting_active", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "whitelisting_active",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub whitelisting_active: Option<bool>,
     /// Allow faster deployment by caching your container image in every Edge site
     #[serde(rename = "force_cache", skip_serializing_if = "Option::is_none")]
@@ -65,7 +68,10 @@ pub struct AppVersionUpdatePayload {
     #[serde(rename = "time_to_deploy", skip_serializing_if = "Option::is_none")]
     pub time_to_deploy: Option<i32>,
     /// Enable every location available. By enabling this, your request will use every potential location, including those which may require a longer time to deploy. This means that your application may take up to 2 minutes before being up and ready. This functionality does not support ACL and Caching at the moment.
-    #[serde(rename = "enable_all_locations", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "enable_all_locations",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub enable_all_locations: Option<bool>,
     #[serde(rename = "session_config", skip_serializing_if = "Option::is_none")]
     pub session_config: Option<Box<models::AppVersionUpdateSessionConfig>>,
@@ -76,7 +82,10 @@ pub struct AppVersionUpdatePayload {
     #[serde(rename = "envs", skip_serializing_if = "Option::is_none")]
     pub envs: Option<Vec<models::AppVersionEnv>>,
     /// Termination grace period in seconds after the SIGTERM signal has been sent
-    #[serde(rename = "termination_grace_period_seconds", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "termination_grace_period_seconds",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub termination_grace_period_seconds: Option<i32>,
     /// By enabling the verify_image option, your image infos (docker_repository, docker_image, docker_tag) will be tested.
     #[serde(rename = "verify_image", skip_serializing_if = "Option::is_none")]
@@ -121,4 +130,3 @@ impl AppVersionUpdatePayload {
         }
     }
 }
-

@@ -25,7 +25,11 @@ pub struct ActiveDeploymentTelemetryGetResult {
 }
 
 impl ActiveDeploymentTelemetryGetResult {
-    pub fn new(retrieval_key: String, scores: Vec<models::ActiveDeploymentTelemetryScore>, partial_result: bool) -> ActiveDeploymentTelemetryGetResult {
+    pub fn new(
+        retrieval_key: String,
+        scores: Vec<models::ActiveDeploymentTelemetryScore>,
+        partial_result: bool,
+    ) -> ActiveDeploymentTelemetryGetResult {
         ActiveDeploymentTelemetryGetResult {
             retrieval_key,
             scores,
@@ -33,4 +37,3 @@ impl ActiveDeploymentTelemetryGetResult {
         }
     }
 }
-

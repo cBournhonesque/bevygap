@@ -26,7 +26,12 @@ pub struct MatchmakerComponentEnvsResponse {
 }
 
 impl MatchmakerComponentEnvsResponse {
-    pub fn new(created_at: String, updated_at: String, key: String, value: String) -> MatchmakerComponentEnvsResponse {
+    pub fn new(
+        created_at: String,
+        updated_at: String,
+        key: String,
+        value: String,
+    ) -> MatchmakerComponentEnvsResponse {
         MatchmakerComponentEnvsResponse {
             created_at,
             updated_at,
@@ -35,4 +40,3 @@ impl MatchmakerComponentEnvsResponse {
         }
     }
 }
-

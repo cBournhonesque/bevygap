@@ -34,7 +34,12 @@ pub struct PullProfileAppVersionLinkResponse {
 }
 
 impl PullProfileAppVersionLinkResponse {
-    pub fn new(app: String, app_version: String, endpoint: String, pull_profile: String) -> PullProfileAppVersionLinkResponse {
+    pub fn new(
+        app: String,
+        app_version: String,
+        endpoint: String,
+        pull_profile: String,
+    ) -> PullProfileAppVersionLinkResponse {
         PullProfileAppVersionLinkResponse {
             app,
             app_version,
@@ -45,4 +50,3 @@ impl PullProfileAppVersionLinkResponse {
         }
     }
 }
-

@@ -20,9 +20,6 @@ pub struct FleetDeleteResponse {
 
 impl FleetDeleteResponse {
     pub fn new(message: String) -> FleetDeleteResponse {
-        FleetDeleteResponse {
-            message,
-        }
+        FleetDeleteResponse { message }
     }
 }
-

@@ -23,10 +23,6 @@ pub struct MatchmakerComponentEnvsCreate {
 
 impl MatchmakerComponentEnvsCreate {
     pub fn new(key: String, value: String) -> MatchmakerComponentEnvsCreate {
-        MatchmakerComponentEnvsCreate {
-            key,
-            value,
-        }
+        MatchmakerComponentEnvsCreate { key, value }
     }
 }
-

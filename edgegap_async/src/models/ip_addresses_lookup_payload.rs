@@ -20,9 +20,6 @@ pub struct IpAddressesLookupPayload {
 
 impl IpAddressesLookupPayload {
     pub fn new(addresses: Vec<String>) -> IpAddressesLookupPayload {
-        IpAddressesLookupPayload {
-            addresses,
-        }
+        IpAddressesLookupPayload { addresses }
     }
 }
-

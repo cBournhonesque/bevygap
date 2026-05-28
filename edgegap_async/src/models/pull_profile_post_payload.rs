@@ -28,7 +28,12 @@ pub struct PullProfilePostPayload {
 }
 
 impl PullProfilePostPayload {
-    pub fn new(name: String, source: String, source_type: SourceType, destination: String) -> PullProfilePostPayload {
+    pub fn new(
+        name: String,
+        source: String,
+        source_type: SourceType,
+        destination: String,
+    ) -> PullProfilePostPayload {
         PullProfilePostPayload {
             name,
             source,
@@ -51,4 +56,3 @@ impl Default for SourceType {
         Self::File
     }
 }
-

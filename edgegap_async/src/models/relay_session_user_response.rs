@@ -23,7 +23,10 @@ pub struct RelaySessionUserResponse {
     #[serde(rename = "longitude", skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
     /// The authorization token of the user
-    #[serde(rename = "authorization_token", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "authorization_token",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub authorization_token: Option<i32>,
 }
 
@@ -37,4 +40,3 @@ impl RelaySessionUserResponse {
         }
     }
 }
-

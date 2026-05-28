@@ -26,12 +26,15 @@ pub struct SessionRequest {
     #[serde(rename = "version")]
     pub version: String,
     /// Unique UUID
-    #[serde(rename = "deployment_request_id", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "deployment_request_id",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deployment_request_id: Option<String>,
     /// List of Selectors to filter potential Deployment to link and tag the Session
     #[serde(rename = "selectors", skip_serializing_if = "Option::is_none")]
     pub selectors: Option<Vec<models::SelectorModel>>,
-    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url 
+    /// When your Session is Linked, Unprocessable or in Error, we will POST the session's details on the webhook_url
     #[serde(rename = "webhook_url", skip_serializing_if = "Option::is_none")]
     pub webhook_url: Option<String>,
 }
@@ -49,4 +52,3 @@ impl SessionRequest {
         }
     }
 }
-

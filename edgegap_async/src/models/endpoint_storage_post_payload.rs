@@ -31,7 +31,13 @@ pub struct EndpointStoragePostPayload {
 }
 
 impl EndpointStoragePostPayload {
-    pub fn new(name: String, access_key_id: String, endpoint: String, bucket: String, secret_access_key: String) -> EndpointStoragePostPayload {
+    pub fn new(
+        name: String,
+        access_key_id: String,
+        endpoint: String,
+        bucket: String,
+        secret_access_key: String,
+    ) -> EndpointStoragePostPayload {
         EndpointStoragePostPayload {
             name,
             access_key_id,
@@ -41,4 +47,3 @@ impl EndpointStoragePostPayload {
         }
     }
 }
-

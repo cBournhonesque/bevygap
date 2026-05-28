@@ -28,7 +28,12 @@ pub struct ArtifactPayload {
 }
 
 impl ArtifactPayload {
-    pub fn new(artifact_deleted: bool, remaining_tags: Vec<String>, image_hash: String, size_mb: f64) -> ArtifactPayload {
+    pub fn new(
+        artifact_deleted: bool,
+        remaining_tags: Vec<String>,
+        image_hash: String,
+        size_mb: f64,
+    ) -> ArtifactPayload {
         ArtifactPayload {
             artifact_deleted,
             remaining_tags,
@@ -37,4 +42,3 @@ impl ArtifactPayload {
         }
     }
 }
-

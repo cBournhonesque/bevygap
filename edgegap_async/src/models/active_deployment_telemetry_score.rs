@@ -20,9 +20,6 @@ pub struct ActiveDeploymentTelemetryScore {
 
 impl ActiveDeploymentTelemetryScore {
     pub fn new(request_id: String) -> ActiveDeploymentTelemetryScore {
-        ActiveDeploymentTelemetryScore {
-            request_id,
-        }
+        ActiveDeploymentTelemetryScore { request_id }
     }
 }
-

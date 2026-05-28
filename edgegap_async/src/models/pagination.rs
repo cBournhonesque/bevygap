@@ -20,7 +20,10 @@ pub struct Pagination {
     #[serde(rename = "next_page_number", skip_serializing_if = "Option::is_none")]
     pub next_page_number: Option<i32>,
     /// Previous page number
-    #[serde(rename = "previous_page_number", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "previous_page_number",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub previous_page_number: Option<i32>,
     #[serde(rename = "paginator", skip_serializing_if = "Option::is_none")]
     pub paginator: Option<Box<models::Paginator>>,
@@ -44,4 +47,3 @@ impl Pagination {
         }
     }
 }
-

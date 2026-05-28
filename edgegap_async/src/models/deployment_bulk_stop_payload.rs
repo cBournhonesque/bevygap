@@ -19,10 +19,9 @@ pub struct DeploymentBulkStopPayload {
 }
 
 impl DeploymentBulkStopPayload {
-    pub fn new(filters: Vec<models::DeploymentBulkStopFiltersPayload>) -> DeploymentBulkStopPayload {
-        DeploymentBulkStopPayload {
-            filters,
-        }
+    pub fn new(
+        filters: Vec<models::DeploymentBulkStopFiltersPayload>,
+    ) -> DeploymentBulkStopPayload {
+        DeploymentBulkStopPayload { filters }
     }
 }
-

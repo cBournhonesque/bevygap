@@ -20,9 +20,6 @@ pub struct Paginator {
 
 impl Paginator {
     pub fn new() -> Paginator {
-        Paginator {
-            num_pages: None,
-        }
+        Paginator { num_pages: None }
     }
 }
-

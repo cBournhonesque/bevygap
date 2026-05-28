@@ -20,9 +20,6 @@ pub struct SessionBulkStopResponse {
 
 impl SessionBulkStopResponse {
     pub fn new(processable: Vec<models::SessionStopResponse>) -> SessionBulkStopResponse {
-        SessionBulkStopResponse {
-            processable,
-        }
+        SessionBulkStopResponse { processable }
     }
 }
-

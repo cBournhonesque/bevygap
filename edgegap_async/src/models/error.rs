@@ -20,9 +20,6 @@ pub struct Error {
 
 impl Error {
     pub fn new(message: String) -> Error {
-        Error {
-            message,
-        }
+        Error { message }
     }
 }
-

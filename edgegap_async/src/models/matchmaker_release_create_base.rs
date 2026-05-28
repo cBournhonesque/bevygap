@@ -20,9 +20,6 @@ pub struct MatchmakerReleaseCreateBase {
 
 impl MatchmakerReleaseCreateBase {
     pub fn new(version: String) -> MatchmakerReleaseCreateBase {
-        MatchmakerReleaseCreateBase {
-            version,
-        }
+        MatchmakerReleaseCreateBase { version }
     }
 }
-

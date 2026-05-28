@@ -20,9 +20,6 @@ pub struct SessionStopResponse {
 
 impl SessionStopResponse {
     pub fn new(session_id: String) -> SessionStopResponse {
-        SessionStopResponse {
-            session_id,
-        }
+        SessionStopResponse { session_id }
     }
 }
-

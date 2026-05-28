@@ -29,7 +29,13 @@ pub struct MatchmakerReleaseResponseBase {
 }
 
 impl MatchmakerReleaseResponseBase {
-    pub fn new(created_at: String, updated_at: String, app_name: String, version_name: String, version: String) -> MatchmakerReleaseResponseBase {
+    pub fn new(
+        created_at: String,
+        updated_at: String,
+        app_name: String,
+        version_name: String,
+        version: String,
+    ) -> MatchmakerReleaseResponseBase {
         MatchmakerReleaseResponseBase {
             created_at,
             updated_at,
@@ -39,4 +45,3 @@ impl MatchmakerReleaseResponseBase {
         }
     }
 }
-

@@ -34,7 +34,14 @@ pub struct DeploymentSessionContext {
 }
 
 impl DeploymentSessionContext {
-    pub fn new(session_id: String, status: String, ready: bool, linked: bool, kind: String, user_count: i32) -> DeploymentSessionContext {
+    pub fn new(
+        session_id: String,
+        status: String,
+        ready: bool,
+        linked: bool,
+        kind: String,
+        user_count: i32,
+    ) -> DeploymentSessionContext {
         DeploymentSessionContext {
             session_id,
             status,
@@ -45,4 +52,3 @@ impl DeploymentSessionContext {
         }
     }
 }
-

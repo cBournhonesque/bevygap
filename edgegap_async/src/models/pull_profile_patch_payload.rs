@@ -51,4 +51,3 @@ impl Default for SourceType {
         Self::File
     }
 }
-

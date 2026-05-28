@@ -20,9 +20,6 @@ pub struct DeploymentStopResponse {
 
 impl DeploymentStopResponse {
     pub fn new(request_id: String) -> DeploymentStopResponse {
-        DeploymentStopResponse {
-            request_id,
-        }
+        DeploymentStopResponse { request_id }
     }
 }
-

@@ -20,9 +20,6 @@ pub struct MatchmakerCreate {
 
 impl MatchmakerCreate {
     pub fn new(name: String) -> MatchmakerCreate {
-        MatchmakerCreate {
-            name,
-        }
+        MatchmakerCreate { name }
     }
 }
-

@@ -28,7 +28,12 @@ pub struct MatchmakerReleaseCreate {
 }
 
 impl MatchmakerReleaseCreate {
-    pub fn new(version: String, frontend_component_name: String, director_component_name: String, match_function_component_name: String) -> MatchmakerReleaseCreate {
+    pub fn new(
+        version: String,
+        frontend_component_name: String,
+        director_component_name: String,
+        match_function_component_name: String,
+    ) -> MatchmakerReleaseCreate {
         MatchmakerReleaseCreate {
             version,
             frontend_component_name,
@@ -37,4 +42,3 @@ impl MatchmakerReleaseCreate {
         }
     }
 }
-

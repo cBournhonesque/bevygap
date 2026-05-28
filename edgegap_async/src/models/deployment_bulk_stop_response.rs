@@ -20,9 +20,6 @@ pub struct DeploymentBulkStopResponse {
 
 impl DeploymentBulkStopResponse {
     pub fn new(processable: Vec<models::DeploymentStopResponse>) -> DeploymentBulkStopResponse {
-        DeploymentBulkStopResponse {
-            processable,
-        }
+        DeploymentBulkStopResponse { processable }
     }
 }
-

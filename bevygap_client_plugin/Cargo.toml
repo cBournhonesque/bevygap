@@ -22,6 +22,7 @@ base64.workspace = true
 bevy_nfws.workspace = true
 serde_json.workspace = true
 bevygap_shared.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 bevy = { workspace = true, default-features = true }

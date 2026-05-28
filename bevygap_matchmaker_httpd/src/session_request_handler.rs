@@ -2,6 +2,7 @@ use axum::body::Body;
 use axum::extract::{Path, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue};
 use axum::{extract::ConnectInfo, extract::Query, response::IntoResponse};
+use bevygap_shared::nats::matchmaker_request_subject;
 use log::*;
 use serde::Deserialize;
 use std::convert::Infallible;
@@ -39,17 +40,34 @@ pub(crate) async fn session_chunked_responder(
 
     let client = state.bgnats.client().clone();
     let reply_inbox = client.new_inbox();
-    let mut response_subscriber = client.subscribe(reply_inbox.to_owned()).await.unwrap();
+    let mut response_subscriber = match client.subscribe(reply_inbox.to_owned()).await {
+        Ok(subscriber) => subscriber,
+        Err(error) => {
+            error!("Failed to subscribe for matchmaker response: {error}");
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "matchmaker unavailable".to_string(),
+            )
+                .into_response();
+        }
+    };
     // this publish needs to "opt in to no_responder messages" somehow, per
     // https://docs.nats.io/reference/reference-protocols/nats-protocol
-    client
+    if let Err(error) = client
         .publish_with_reply(
-            format!("matchmaker.request.{game_name}.{game_ver}"),
+            matchmaker_request_subject(&game_name, &game_ver),
             reply_inbox,
             payload.into(),
         )
         .await
-        .unwrap();
+    {
+        error!("Failed to publish matchmaker request: {error}");
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "matchmaker unavailable".to_string(),
+        )
+            .into_response();
+    }
     // TODO subject shoud have app name/ver in it?
 
     // we'll sub to reply messages over nats and funnel to the stream sending back http chunks.
@@ -63,10 +81,11 @@ pub(crate) async fn session_chunked_responder(
                 break;
             }
             // info!("Got chunk, writing to channel");
-            let Ok(_) = tx
-                .send(String::from_utf8(msg.payload.to_vec()).unwrap())
-                .await
-            else {
+            let Ok(chunk) = String::from_utf8(msg.payload.to_vec()) else {
+                warn!("Ignoring non-utf8 matchmaker chunk");
+                continue;
+            };
+            let Ok(_) = tx.send(chunk).await else {
                 warn!("Can't write to channel, closed: {}", tx.is_closed());
                 break;
             };
@@ -91,6 +110,7 @@ pub(crate) async fn session_chunked_responder(
         headers,
         Body::from_stream(stream), // Wrap the stream in an HTTP body for chunked transfer
     )
+        .into_response()
 }
 
 /// Logic to decide what to use as the clients IP address for the purposes of Edgegap sessions.

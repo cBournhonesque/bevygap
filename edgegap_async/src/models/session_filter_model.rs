@@ -49,4 +49,3 @@ impl Default for FilterType {
         Self::Any
     }
 }
-

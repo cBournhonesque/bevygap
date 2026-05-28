@@ -20,9 +20,6 @@ pub struct MatchmakerReleaseUpdateBase {
 
 impl MatchmakerReleaseUpdateBase {
     pub fn new() -> MatchmakerReleaseUpdateBase {
-        MatchmakerReleaseUpdateBase {
-            version: None,
-        }
+        MatchmakerReleaseUpdateBase { version: None }
     }
 }
-

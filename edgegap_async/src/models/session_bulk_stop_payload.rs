@@ -20,9 +20,6 @@ pub struct SessionBulkStopPayload {
 
 impl SessionBulkStopPayload {
     pub fn new(filters: Vec<models::SessionBulkStopFiltersPayload>) -> SessionBulkStopPayload {
-        SessionBulkStopPayload {
-            filters,
-        }
+        SessionBulkStopPayload { filters }
     }
 }
-

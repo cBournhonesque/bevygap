@@ -20,9 +20,6 @@ pub struct IpAddressResponse {
 
 impl IpAddressResponse {
     pub fn new(public_ip: String) -> IpAddressResponse {
-        IpAddressResponse {
-            public_ip,
-        }
+        IpAddressResponse { public_ip }
     }
 }
-

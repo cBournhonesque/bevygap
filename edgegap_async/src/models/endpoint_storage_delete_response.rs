@@ -20,9 +20,6 @@ pub struct EndpointStorageDeleteResponse {
 
 impl EndpointStorageDeleteResponse {
     pub fn new(message: String) -> EndpointStorageDeleteResponse {
-        EndpointStorageDeleteResponse {
-            message,
-        }
+        EndpointStorageDeleteResponse { message }
     }
 }
-

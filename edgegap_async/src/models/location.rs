@@ -42,7 +42,16 @@ pub struct Location {
 }
 
 impl Location {
-    pub fn new(city: String, continent: String, country: String, timezone: String, administrative_division: String, latitude: f64, longitude: f64, r#type: String) -> Location {
+    pub fn new(
+        city: String,
+        continent: String,
+        country: String,
+        timezone: String,
+        administrative_division: String,
+        latitude: f64,
+        longitude: f64,
+        r#type: String,
+    ) -> Location {
         Location {
             city,
             continent,
@@ -56,4 +65,3 @@ impl Location {
         }
     }
 }
-

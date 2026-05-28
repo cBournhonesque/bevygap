@@ -38,7 +38,10 @@ pub struct Request {
     #[serde(rename = "continent", skip_serializing_if = "Option::is_none")]
     pub continent: Option<String>,
     /// The administrative division where the deployment is located
-    #[serde(rename = "administrative_division", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "administrative_division",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub administrative_division: Option<String>,
     /// List of tags associated with the deployment
     #[serde(rename = "tags", skip_serializing_if = "Option::is_none")]
@@ -48,7 +51,14 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn new(request_id: String, request_dns: String, request_app: String, request_version: String, request_user_count: i32, container_log_storage: models::ContainerLogStorageModel) -> Request {
+    pub fn new(
+        request_id: String,
+        request_dns: String,
+        request_app: String,
+        request_version: String,
+        request_user_count: i32,
+        container_log_storage: models::ContainerLogStorageModel,
+    ) -> Request {
         Request {
             request_id,
             request_dns,
@@ -64,4 +74,3 @@ impl Request {
         }
     }
 }
-

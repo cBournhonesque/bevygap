@@ -26,11 +26,6 @@ pub struct LobbyReadResponse {
 
 impl LobbyReadResponse {
     pub fn new(name: String, url: String, status: String) -> LobbyReadResponse {
-        LobbyReadResponse {
-            name,
-            url,
-            status,
-        }
+        LobbyReadResponse { name, url, status }
     }
 }
-

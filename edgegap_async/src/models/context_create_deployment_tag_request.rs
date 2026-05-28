@@ -19,9 +19,6 @@ pub struct ContextCreateDeploymentTagRequest {
 
 impl ContextCreateDeploymentTagRequest {
     pub fn new() -> ContextCreateDeploymentTagRequest {
-        ContextCreateDeploymentTagRequest {
-            name: None,
-        }
+        ContextCreateDeploymentTagRequest { name: None }
     }
 }
-

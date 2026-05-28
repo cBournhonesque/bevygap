@@ -25,7 +25,11 @@ pub struct ImageTagPayload {
 }
 
 impl ImageTagPayload {
-    pub fn new(tag: String, last_push_at: String, artifact: models::ArtifactPayload) -> ImageTagPayload {
+    pub fn new(
+        tag: String,
+        last_push_at: String,
+        artifact: models::ArtifactPayload,
+    ) -> ImageTagPayload {
         ImageTagPayload {
             tag,
             last_push_at,
@@ -33,4 +37,3 @@ impl ImageTagPayload {
         }
     }
 }
-
