@@ -144,17 +144,30 @@ async fn handle_socket_inner(
     // now we wait for response messages on this nats inbox, and send back to ws client.
     // receiving an empty message from nats means the end of stream.
 
+    let mut chunks = 0usize;
+    let mut saw_terminal_feedback = false;
     while let Some(msg) = response_subscriber.next().await {
         if msg.payload.is_empty() {
-            info!("got empty response, breaking");
+            if saw_terminal_feedback {
+                info!("matchmaker response stream finished after {chunks} chunks");
+            } else {
+                warn!("matchmaker response stream ended before SessionReady/Error after {chunks} chunks");
+            }
             break;
         }
         let chunk = String::from_utf8(msg.payload.to_vec())
             .map_err(|e| format!("Matchmaker response was not utf8: {e}"))?;
         match serde_json::from_str::<SessionRequestFeedback>(&chunk) {
-            Ok(feedback) => info!("> {feedback}"),
+            Ok(feedback) => {
+                saw_terminal_feedback = matches!(
+                    feedback,
+                    SessionRequestFeedback::SessionReady { .. } | SessionRequestFeedback::Error(..)
+                );
+                info!("> {feedback}");
+            }
             Err(_) => info!("> {} bytes", chunk.len()),
         }
+        chunks += 1;
         if socket.send(Message::Text(chunk)).await.is_err() {
             return Err("Can't send chunk to ws client".to_string());
         }

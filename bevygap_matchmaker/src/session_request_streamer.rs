@@ -107,8 +107,14 @@ async fn stream_request_processor(
         return mock_stream_request_processor(state, session_request, responder).await;
     }
 
-    let selected_deployment =
-        select_existing_deployment_for_request(state, &session_request).await?;
+    let selected_deployment = select_deployment_for_request(state, &session_request).await?;
+
+    if let Some(deployment) = selected_deployment
+        .as_ref()
+        .filter(|deployment| deployment.provider == DeploymentProvider::Static)
+    {
+        return route_to_static_deployment(state, &session_request, deployment, responder).await;
+    }
 
     let mut session_model = SessionModel::new(state.settings.app_name.clone());
     session_model.ip_list = Some(vec![session_request.client_ip.to_string()]);
@@ -126,6 +132,12 @@ async fn stream_request_processor(
                 "routing to existing deployment {}",
                 deployment.request_id
             )))
+            .await?;
+    } else {
+        responder
+            .send(SessionRequestFeedback::ProgressReport(
+                "creating new deployment".to_string(),
+            ))
             .await?;
     }
     // create session via edgegap api.
@@ -286,18 +298,26 @@ async fn stream_request_processor(
     Ok(())
 }
 
-async fn select_existing_deployment_for_request(
+async fn select_deployment_for_request(
     state: &MatchmakerState,
     session_request: &SessionRequest,
 ) -> Result<Option<DeploymentMetrics>, MyError<SessionPostError>> {
     let policy = DeploymentCapacityPolicy::from_settings(&state.settings);
     let deployments = load_deployment_metrics(state).await?;
-    let selected =
-        select_deployment_for_room(deployments.iter(), &session_request.room, policy).cloned();
+    let client_country = state.client_country_code(&session_request.client_ip);
+    let static_country_codes = state.settings.static_client_country_codes();
+    let selected = select_deployment_for_request_from_metrics(
+        deployments.iter(),
+        &session_request.room,
+        client_country.as_deref(),
+        &static_country_codes,
+        policy,
+    )
+    .cloned();
     if selected.is_none() {
         info!(
-            "No existing deployment accepted room {:?}; Edgegap will create a new deployment",
-            session_request.room
+            "No existing deployment accepted room {:?} for client_ip={} country={:?}; Edgegap will create a new deployment",
+            session_request.room, session_request.client_ip, client_country
         );
     }
     Ok(selected)
@@ -334,6 +354,48 @@ async fn load_deployment_metrics(
     Ok(deployments)
 }
 
+fn select_deployment_for_request_from_metrics<'a>(
+    deployments: impl IntoIterator<Item = &'a DeploymentMetrics>,
+    room: &RoomSelection,
+    client_country_code: Option<&str>,
+    static_client_country_codes: &[String],
+    policy: DeploymentCapacityPolicy,
+) -> Option<&'a DeploymentMetrics> {
+    let deployments = deployments.into_iter().collect::<Vec<_>>();
+
+    if matches!(room, RoomSelection::Code(_) | RoomSelection::Id(_)) {
+        return select_deployment_for_room(deployments.iter().copied(), room, policy);
+    }
+
+    let static_allowed = client_country_code.is_some_and(|country| {
+        static_client_country_codes
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(country))
+    });
+
+    if static_allowed {
+        if let Some(deployment) = select_deployment_for_room(
+            deployments
+                .iter()
+                .copied()
+                .filter(|deployment| deployment.provider == DeploymentProvider::Static),
+            room,
+            policy,
+        ) {
+            return Some(deployment);
+        }
+    }
+
+    select_deployment_for_room(
+        deployments
+            .iter()
+            .copied()
+            .filter(|deployment| deployment.provider == DeploymentProvider::Edgegap),
+        room,
+        policy,
+    )
+}
+
 fn select_deployment_for_room<'a>(
     deployments: impl IntoIterator<Item = &'a DeploymentMetrics>,
     room: &RoomSelection,
@@ -351,10 +413,20 @@ fn select_deployment_for_room<'a>(
                 .then_with(|| {
                     left.total_players
                         .cmp(&right.total_players)
+                        .then_with(|| {
+                            deployment_routing_penalty(left).cmp(&deployment_routing_penalty(right))
+                        })
                         .then_with(|| left.room_count().cmp(&right.room_count()))
                         .then_with(|| left.request_id.cmp(&right.request_id))
                 })
         })
+}
+
+fn deployment_routing_penalty(deployment: &DeploymentMetrics) -> u8 {
+    match deployment.provider {
+        DeploymentProvider::Static => 0,
+        DeploymentProvider::Edgegap => 1,
+    }
 }
 
 fn requested_room_penalty(
@@ -407,6 +479,115 @@ fn deployment_accepts_request(
             }
         }
     }
+}
+
+async fn route_to_static_deployment(
+    state: &MatchmakerState,
+    session_request: &SessionRequest,
+    deployment: &DeploymentMetrics,
+    responder: &ChunkResponder,
+) -> Result<(), MyError<SessionPostError>> {
+    let port = deployment.external_port.ok_or_else(|| {
+        MyError::Bevygap(
+            500,
+            format!(
+                "static deployment {} has no external_port",
+                deployment.request_id
+            ),
+        )
+    })?;
+    let client_id: u64 = rand::random();
+    let session_id = static_session_id(&deployment.request_id, client_id);
+
+    info!(
+        "Routing request for room {:?} from client_ip={} directly to static deployment {} at {}:{}",
+        session_request.room,
+        session_request.client_ip,
+        deployment.request_id,
+        deployment.public_ip,
+        port
+    );
+    responder
+        .send(SessionRequestFeedback::ProgressReport(format!(
+            "routing to static deployment {}",
+            deployment.request_id
+        )))
+        .await?;
+    responder
+        .send(SessionRequestFeedback::SessionRequestAccepted(
+            session_id.clone(),
+        ))
+        .await?;
+
+    state
+        .nats
+        .kv_unclaimed_sessions()
+        .put(session_id.clone(), session_id.clone().into())
+        .await
+        .map_err(|e| {
+            EdgegapError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to put static session in unclaimed_sessions KV: {e}"),
+            ))
+        })?;
+
+    let ip = deployment.public_ip.parse::<IpAddr>().map_err(|e| {
+        MyError::Bevygap(
+            500,
+            format!(
+                "Failed parsing static deployment ip {}: {e}",
+                deployment.public_ip
+            ),
+        )
+    })?;
+    let cert_digest =
+        lookup_cert_digest(state, Some(deployment.request_id.as_str()), &ip, Some(port)).await?;
+    let server_address = SocketAddr::new(ip, port);
+
+    info!(
+        "BUILD static ConnectToken: server_address={server_address} proto id: {}, client_id: {client_id}",
+        state.settings.protocol_id()
+    );
+    let token = ConnectToken::build(
+        server_address,
+        state.settings.protocol_id(),
+        client_id,
+        state.lightyear_private_key(),
+    )
+    .generate()
+    .map_err(|e| MyError::Bevygap(500, format!("Failed to generate static token: {e:?}")))?;
+
+    let token_bytes = token
+        .try_into_bytes()
+        .map_err(|e| MyError::Bevygap(500, format!("Failed to serialize static token: {e:?}")))?;
+    let token_base64 = BASE64_STANDARD.encode(token_bytes);
+
+    register_ids_in_nats(state, client_id.to_string(), session_id).await?;
+
+    responder
+        .send(SessionRequestFeedback::SessionReady {
+            token: token_base64,
+            ip: deployment.public_ip.clone(),
+            port,
+            cert_digest,
+        })
+        .await?;
+    responder.finish().await?;
+    Ok(())
+}
+
+fn static_session_id(request_id: &str, client_id: u64) -> String {
+    let request_id = request_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("static-{request_id}-{client_id}")
 }
 
 async fn mock_stream_request_processor(
@@ -727,11 +908,28 @@ mod tests {
             request_id: request_id.to_string(),
             public_ip: "127.0.0.1".to_string(),
             external_port: Some(7777),
+            provider: DeploymentProvider::Edgegap,
+            country_code: None,
+            region: None,
             total_players,
             max_players: 100,
             max_rooms: 4,
             cpu_percent,
             rooms,
+        }
+    }
+
+    fn static_deployment(
+        request_id: &str,
+        total_players: u32,
+        cpu_percent: Option<f32>,
+        rooms: Vec<DeploymentRoomMetrics>,
+    ) -> DeploymentMetrics {
+        DeploymentMetrics {
+            provider: DeploymentProvider::Static,
+            country_code: Some("US".to_string()),
+            region: Some("us-east".to_string()),
+            ..deployment(request_id, total_players, cpu_percent, rooms)
         }
     }
 
@@ -825,5 +1023,88 @@ mod tests {
             select_deployment_for_room(deployments.iter(), &RoomSelection::Auto, policy())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn public_us_request_prefers_static_deployment() {
+        let deployments = vec![
+            deployment("edgegap-open", 1, None, vec![room("id:0", false, 1, 50)]),
+            static_deployment("linode-us", 20, None, vec![room("id:0", false, 20, 50)]),
+        ];
+
+        let selected = select_deployment_for_request_from_metrics(
+            deployments.iter(),
+            &RoomSelection::Auto,
+            Some("US"),
+            &[String::from("US")],
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "linode-us");
+    }
+
+    #[test]
+    fn public_non_us_request_rejects_static_deployment() {
+        let deployments = vec![
+            deployment("edgegap-open", 10, None, vec![room("id:0", false, 10, 50)]),
+            static_deployment("linode-us", 1, None, vec![room("id:0", false, 1, 50)]),
+        ];
+
+        let selected = select_deployment_for_request_from_metrics(
+            deployments.iter(),
+            &RoomSelection::Auto,
+            Some("FR"),
+            &[String::from("US")],
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "edgegap-open");
+    }
+
+    #[test]
+    fn private_room_ignores_static_country_filter() {
+        let deployments = vec![static_deployment(
+            "linode-us",
+            1,
+            None,
+            vec![room("code:ROOM", true, 1, 50)],
+        )];
+
+        let selected = select_deployment_for_request_from_metrics(
+            deployments.iter(),
+            &RoomSelection::Code("ROOM".to_string()),
+            Some("FR"),
+            &[String::from("US")],
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "linode-us");
+    }
+
+    #[test]
+    fn private_room_prefers_existing_room_over_static_warm_capacity() {
+        let deployments = vec![
+            deployment(
+                "edgegap-room",
+                40,
+                None,
+                vec![room("code:ROOM", true, 1, 50)],
+            ),
+            static_deployment("linode-empty", 1, None, vec![room("id:0", false, 1, 50)]),
+        ];
+
+        let selected = select_deployment_for_request_from_metrics(
+            deployments.iter(),
+            &RoomSelection::Code("ROOM".to_string()),
+            Some("FR"),
+            &[String::from("US")],
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "edgegap-room");
     }
 }

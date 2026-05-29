@@ -10,6 +10,8 @@ use edgegap_async::apis::configuration::*;
 use futures::stream::StreamExt;
 use lightyear::netcode::PRIVATE_KEY_BYTES;
 use log::*;
+use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::*, util::*};
 
@@ -94,6 +96,14 @@ pub struct Settings {
     /// Poll interval while waiting for a ready deployment to publish its cert digest.
     #[arg(long, default_value_t = 200)]
     cert_digest_poll_ms: u64,
+    /// Optional MaxMind GeoLite2/GeoIP2 country database used to decide whether
+    /// public requests may use static self-hosted deployments.
+    #[arg(long, default_value = "")]
+    geoip_db: String,
+    /// Comma-separated country codes whose public requests may use static
+    /// self-hosted deployments. Private/specific rooms ignore this filter.
+    #[arg(long, default_value = "US")]
+    static_client_country_codes: String,
 }
 
 impl Settings {
@@ -137,6 +147,24 @@ impl Settings {
 
     pub(crate) fn cert_digest_poll_interval(&self) -> Duration {
         Duration::from_millis(self.cert_digest_poll_ms.clamp(10, 5_000))
+    }
+
+    pub(crate) fn static_client_country_codes(&self) -> Vec<String> {
+        self.static_client_country_codes
+            .split(',')
+            .map(|value| value.trim().to_ascii_uppercase())
+            .filter(|value| !value.is_empty())
+            .collect()
+    }
+
+    fn geoip_db_path(&self) -> Option<String> {
+        if !self.geoip_db.trim().is_empty() {
+            return Some(self.geoip_db.trim().to_string());
+        }
+        std::env::var("BEVYGAP_GEOIP_DB")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
     }
 
     fn require_production_netcode(&self) -> bool {
@@ -228,6 +256,7 @@ pub(crate) struct MatchmakerState {
     api_config: Configuration,
     settings: Settings,
     lypkey: [u8; PRIVATE_KEY_BYTES],
+    geoip: Option<Arc<maxminddb::Reader<Vec<u8>>>>,
 }
 
 impl MatchmakerState {
@@ -240,6 +269,15 @@ impl MatchmakerState {
     pub(crate) fn lightyear_private_key(&self) -> [u8; PRIVATE_KEY_BYTES] {
         self.lypkey
     }
+    pub(crate) fn client_country_code(&self, ip: &str) -> Option<String> {
+        let reader = self.geoip.as_ref()?;
+        let ip = ip.parse::<IpAddr>().ok()?;
+        let result = reader.lookup(ip).ok()?;
+        let country_code: Option<String> = result
+            .decode_path(&maxminddb::path!["country", "iso_code"])
+            .ok()?;
+        country_code.map(|code| code.to_ascii_uppercase())
+    }
 }
 
 #[tokio::main]
@@ -250,6 +288,19 @@ async fn main() -> Result<(), async_nats::Error> {
     let settings = Settings::parse();
     let lypkey = settings.parse_private_key();
     settings.validate_netcode_identity(lypkey);
+    let geoip =
+        settings
+            .geoip_db_path()
+            .and_then(|path| match maxminddb::Reader::open_readfile(&path) {
+                Ok(reader) => {
+                    info!("Loaded GeoIP database from {path}");
+                    Some(Arc::new(reader))
+                }
+                Err(error) => {
+                    warn!("Failed to load GeoIP database from {path}: {error}");
+                    None
+                }
+            });
     let api_config = if settings.mock_edgegap {
         info!(
             "Using mock Edgegap sessions at {}:{}",
@@ -264,6 +315,7 @@ async fn main() -> Result<(), async_nats::Error> {
         api_config,
         settings,
         lypkey,
+        geoip,
     };
 
     // ensure the specified app and version are valid and ready for players.

@@ -2,7 +2,7 @@ use crate::bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 use async_nats::jetstream::kv::Operation;
 use bevy::prelude::*;
 use bevygap_shared::nats::{cert_digest_lookup_keys, *};
-use bevygap_shared::protocol::DeploymentMetrics;
+use bevygap_shared::protocol::{DeploymentMetrics, DeploymentProvider};
 use futures::StreamExt;
 use lightyear::connection::client::{Connected, Disconnected};
 use lightyear::connection::server::Start;
@@ -352,6 +352,9 @@ fn handle_deployment_metrics_update(
         request_id: context.request_id(),
         public_ip: context.public_ip(),
         external_port: context.game_external_port(),
+        provider: deployment_provider_from_env(),
+        country_code: deployment_country_code_from_env(),
+        region: deployment_region_from_env(),
         total_players: metrics.total_players,
         max_players: metrics.max_players,
         max_rooms: metrics.max_rooms,
@@ -359,6 +362,32 @@ fn handle_deployment_metrics_update(
         rooms: metrics.rooms.clone(),
     };
     nats_sender.deployment_metrics(deployment_metrics);
+}
+
+fn deployment_provider_from_env() -> DeploymentProvider {
+    match std::env::var("BEVYGAP_DEPLOYMENT_PROVIDER")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "static" | "self_hosted" | "self-hosted" | "linode" | "vps" => DeploymentProvider::Static,
+        _ => DeploymentProvider::Edgegap,
+    }
+}
+
+fn deployment_country_code_from_env() -> Option<String> {
+    std::env::var("BEVYGAP_DEPLOYMENT_COUNTRY_CODE")
+        .ok()
+        .map(|value| value.trim().to_ascii_uppercase())
+        .filter(|value| !value.is_empty())
+}
+
+fn deployment_region_from_env() -> Option<String> {
+    std::env::var("BEVYGAP_DEPLOYMENT_REGION")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Exists purely to allow us to trigger an event via command queue.

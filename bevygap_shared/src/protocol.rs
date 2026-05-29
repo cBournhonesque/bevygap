@@ -123,11 +123,25 @@ pub struct DeploymentMetrics {
     pub request_id: String,
     pub public_ip: String,
     pub external_port: Option<u16>,
+    #[serde(default)]
+    pub provider: DeploymentProvider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
     pub total_players: u32,
     pub max_players: u32,
     pub max_rooms: u32,
     pub cpu_percent: Option<f32>,
     pub rooms: Vec<DeploymentRoomMetrics>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentProvider {
+    #[default]
+    Edgegap,
+    Static,
 }
 
 impl DeploymentMetrics {

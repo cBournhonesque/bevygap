@@ -38,6 +38,11 @@ async fn delete_session_worker(state: &MatchmakerState) -> Result<(), async_nats
         let mut messages = consumer.fetch().max_messages(100).messages().await?;
         while let Some(Ok(message)) = messages.next().await {
             let session_id = String::from_utf8(message.payload.to_vec())?;
+            if session_id.starts_with("static-") {
+                info!("Skipping Edgegap delete for static session {session_id}");
+                message.ack().await?;
+                continue;
+            }
             match session_delete(state.configuration(), session_id.as_str()).await {
                 Ok(session_delete_response) => {
                     info!("session_delete ok: {:?}", session_delete_response);
