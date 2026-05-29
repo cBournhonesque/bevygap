@@ -10,6 +10,7 @@ use edgegap_async::apis::configuration::*;
 use futures::stream::StreamExt;
 use lightyear::netcode::PRIVATE_KEY_BYTES;
 use log::*;
+use std::time::Duration;
 use tracing_subscriber::{layer::*, util::*};
 
 use bevygap_shared::nats::*;
@@ -87,6 +88,12 @@ pub struct Settings {
     /// Maximum reported CPU percentage allowed before routing to a new deployment.
     #[arg(long, default_value_t = 85.0)]
     max_cpu_percent_per_deployment: f32,
+    /// Maximum time to wait for a ready deployment to publish its WebTransport cert digest.
+    #[arg(long, default_value_t = 15_000)]
+    cert_digest_timeout_ms: u64,
+    /// Poll interval while waiting for a ready deployment to publish its cert digest.
+    #[arg(long, default_value_t = 200)]
+    cert_digest_poll_ms: u64,
 }
 
 impl Settings {
@@ -122,6 +129,14 @@ impl Settings {
                     .expect("Failed to parse LIGHTRIDER_PROTOCOL_ID")
             })
             .unwrap_or(0)
+    }
+
+    pub(crate) fn cert_digest_timeout(&self) -> Duration {
+        Duration::from_millis(self.cert_digest_timeout_ms.max(1))
+    }
+
+    pub(crate) fn cert_digest_poll_interval(&self) -> Duration {
+        Duration::from_millis(self.cert_digest_poll_ms.clamp(10, 5_000))
     }
 
     fn require_production_netcode(&self) -> bool {

@@ -1,7 +1,7 @@
 /// Detects orphaned edgegap sessions and schedules them for deletion by the API
 /// Actual API-delete call happens in the session_delete_worker.
 use crate::MatchmakerState;
-use ::time::OffsetDateTime;
+use ::time::{Duration as TimeDuration, OffsetDateTime};
 use async_nats::jetstream::kv::Operation;
 use futures::{StreamExt, TryStreamExt};
 use log::*;
@@ -54,9 +54,12 @@ async fn unclaimed_session_reaper(
                 }
             };
             let age = OffsetDateTime::now_utc() - entry.created;
-            info!("* Session {session_id} is {age} old");
+            let formatted_age = format_duration_minutes_seconds(age);
+            debug!("* Session {session_id} is {formatted_age} old");
             if age > Duration::from_secs(crate::MAX_SESSION_CREATION_SECONDS + 2) {
-                warn!("Unclaimed session {session_id} is older than 30 seconds = {age}");
+                warn!(
+                    "Unclaimed session {session_id} is older than 30 seconds = {formatted_age}; client never connected to the game server"
+                );
                 if queue_session_deletes {
                     // write to delete_sessions work queue and remove from unclaimed_sessions KV
                     state
@@ -73,6 +76,11 @@ async fn unclaimed_session_reaper(
     // Ok(())
 }
 
+fn format_duration_minutes_seconds(duration: TimeDuration) -> String {
+    let seconds = duration.whole_seconds().max(0);
+    format!("{}m{:02}s", seconds / 60, seconds % 60)
+}
+
 /// Deletes sessions once a gameserver removes the active_sessions KV entry.
 ///  this is the happy path, where there were no orphans..
 async fn session_cleanup_watcher(
@@ -82,7 +90,7 @@ async fn session_cleanup_watcher(
     let kv = state.nats.kv_active_connections();
     let mut watcher = kv.watch(">").await?;
     while let Some(event) = watcher.next().await {
-        info!("{event:?}");
+        debug!("{event:?}");
         match event {
             Ok(event) => {
                 let session_id = event.key;
@@ -115,4 +123,25 @@ async fn session_cleanup_watcher(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_duration_as_minutes_and_seconds() {
+        assert_eq!(
+            format_duration_minutes_seconds(TimeDuration::seconds(0)),
+            "0m00s"
+        );
+        assert_eq!(
+            format_duration_minutes_seconds(TimeDuration::seconds(64)),
+            "1m04s"
+        );
+        assert_eq!(
+            format_duration_minutes_seconds(TimeDuration::seconds(-3)),
+            "0m00s"
+        );
+    }
 }

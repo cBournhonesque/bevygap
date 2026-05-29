@@ -8,6 +8,7 @@ use lightyear::netcode::ConnectToken;
 use log::*;
 use serde::{de, Deserialize, Serialize};
 use std::net::SocketAddr;
+use tokio::time::Instant;
 
 fn session_io_error(message: impl Into<String>) -> EdgegapError<SessionPostError> {
     EdgegapError::Io(std::io::Error::new(
@@ -310,29 +311,62 @@ async fn session_responder(
         .parse::<std::net::IpAddr>()
         .map_err(|e| session_io_error(format!("Failed parsing server ip {public_ip_str}: {e}")))?;
 
-    // TODO once the session is ready, the cert digest should have been reported, but
-    // there is definitely a race here so we should block on it for a second or so?
     let cert_digest_keys = cert_digest_lookup_keys(
         Some(deployment.request_id.as_str()),
         public_ip_str,
         Some(port),
     );
     let mut cert_digest = None;
-    for key in &cert_digest_keys {
-        match state.nats.kv_cert_digests().get(key.as_str()).await {
-            Ok(Some(value)) => {
-                cert_digest = Some(String::from_utf8(value.into()).map_err(|e| {
-                    session_io_error(format!("Cert digest for key {key} is not utf8: {e}"))
-                })?);
-                break;
-            }
-            Ok(None) => {}
-            Err(error) => {
-                return Err(session_io_error(format!(
-                    "Failed to get cert digest from KV for key {key}: {error}"
-                )));
+    let started_at = Instant::now();
+    let timeout = state.settings.cert_digest_timeout();
+    let poll_interval = state.settings.cert_digest_poll_interval();
+    let mut attempts = 0u32;
+    let mut last_error = None;
+
+    while cert_digest.is_none() {
+        attempts += 1;
+        for key in &cert_digest_keys {
+            match state.nats.kv_cert_digests().get(key.as_str()).await {
+                Ok(Some(value)) => {
+                    cert_digest = Some(String::from_utf8(value.into()).map_err(|e| {
+                        session_io_error(format!("Cert digest for key {key} is not utf8: {e}"))
+                    })?);
+                    info!(
+                        "Got cert digest for key {key} after {attempts} lookup attempts and {:?}",
+                        started_at.elapsed()
+                    );
+                    break;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!("Failed to get cert digest from KV for key {key}: {error}");
+                    last_error = Some(error.to_string());
+                }
             }
         }
+
+        if cert_digest.is_some() {
+            break;
+        }
+
+        if started_at.elapsed() >= timeout {
+            let error_suffix = last_error
+                .map(|error| format!("; last NATS error={error}"))
+                .unwrap_or_default();
+            return Err(session_io_error(format!(
+                "Failed to get cert digest from KV for keys: {} after {attempts} attempts over {:?}{error_suffix}",
+                cert_digest_keys.join(","),
+                started_at.elapsed()
+            )));
+        }
+
+        if attempts == 1 || attempts % 10 == 0 {
+            info!(
+                "Cert digest not published yet for keys: {}; retrying",
+                cert_digest_keys.join(",")
+            );
+        }
+        tokio::time::sleep(poll_interval).await;
     }
     let cert_digest = cert_digest.ok_or_else(|| {
         session_io_error(format!(

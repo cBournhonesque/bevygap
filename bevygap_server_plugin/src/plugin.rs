@@ -10,7 +10,7 @@ use lightyear::connection::shared::{ConnectionRequestHandler, DeniedReason};
 use lightyear::netcode::NetcodeServer;
 use lightyear::prelude::server::{ClientOf, WebTransportServerIo};
 use lightyear::prelude::*;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
@@ -518,7 +518,7 @@ fn setup_nats(runtime: ResMut<TokioTasksRuntime>, mut commands: Commands) {
                     {
                         error!("Failed to put deployment metrics for {key}: {error}");
                     } else {
-                        info!(
+                        debug!(
                             "Deployment metrics put: key={key}, players={}/{}, rooms={}/{}",
                             metrics.total_players,
                             metrics.max_players,

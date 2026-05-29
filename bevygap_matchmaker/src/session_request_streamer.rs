@@ -533,34 +533,57 @@ async fn lookup_cert_digest(
         "Looking up cert digest with keys: {}",
         lookup_keys.join(",")
     );
-    for key in &lookup_keys {
-        match state.nats.kv_cert_digests().get(key.as_str()).await {
-            Ok(Some(cert_digest)) => {
-                let cert_digest = String::from_utf8(cert_digest.into()).map_err(|e| {
-                    MyError::Bevygap(
-                        500,
-                        format!("Cert digest value for key {key} is not utf8: {e}"),
-                    )
-                })?;
-                info!("Got cert digest for key {key}");
-                return Ok(cert_digest);
-            }
-            Ok(None) => {}
-            Err(e) => {
-                error!("err getting digest for key {key}: {e:?}");
-                return Err(MyError::Bevygap(
-                    500,
-                    "Error'ed on lookup for cert_digest".into(),
-                ));
+    let started_at = Instant::now();
+    let timeout = state.settings.cert_digest_timeout();
+    let poll_interval = state.settings.cert_digest_poll_interval();
+    let mut attempts = 0u32;
+    let mut last_error = None;
+
+    loop {
+        attempts += 1;
+        for key in &lookup_keys {
+            match state.nats.kv_cert_digests().get(key.as_str()).await {
+                Ok(Some(cert_digest)) => {
+                    let cert_digest = String::from_utf8(cert_digest.into()).map_err(|e| {
+                        MyError::Bevygap(
+                            500,
+                            format!("Cert digest value for key {key} is not utf8: {e}"),
+                        )
+                    })?;
+                    info!(
+                        "Got cert digest for key {key} after {attempts} lookup attempts and {:?}",
+                        started_at.elapsed()
+                    );
+                    return Ok(cert_digest);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("err getting digest for key {key}: {e:?}");
+                    last_error = Some(e.to_string());
+                }
             }
         }
+
+        if started_at.elapsed() >= timeout {
+            let error_suffix = last_error
+                .map(|error| format!("; last NATS error={error}"))
+                .unwrap_or_default();
+            return Err(MyError::Bevygap(
+                500,
+                format!(
+                    "No cert digest found for public_ip={public_ip}, external_port={external_port:?}, request_id={request_id:?} after {attempts} attempts over {:?}{error_suffix}",
+                    started_at.elapsed()
+                ),
+            ));
+        }
+
+        if attempts == 1 || attempts % 10 == 0 {
+            info!(
+                "Cert digest not published yet for public_ip={public_ip}, external_port={external_port:?}, request_id={request_id:?}; retrying"
+            );
+        }
+        tokio::time::sleep(poll_interval).await;
     }
-    Err(MyError::Bevygap(
-        500,
-        format!(
-            "No cert digest found for public_ip={public_ip}, external_port={external_port:?}, request_id={request_id:?}"
-        ),
-    ))
 }
 
 /// Subscribes to "matchmaker.request" and processes the session request stream.

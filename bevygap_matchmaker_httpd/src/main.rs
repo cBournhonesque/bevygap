@@ -1,3 +1,4 @@
+use anyhow::Context;
 use async_nats::client::RequestErrorKind;
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, Method};
@@ -59,13 +60,15 @@ pub(crate) struct AppState {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     setup_logging();
     let settings = Settings::parse();
 
     let bgnats = BevygapNats::new_and_connect("bevygap_matchmaker_httpd")
         .await
-        .unwrap();
+        .map_err(|err| {
+            anyhow::anyhow!("failed to connect to NATS for bevygap_matchmaker_httpd: {err}")
+        })?;
     let app_state = Arc::new(AppState {
         bgnats,
         settings: settings.clone(),
@@ -83,7 +86,7 @@ async fn main() {
             settings
                 .allowed_origin()
                 .parse::<HeaderValue>()
-                .expect("failed parsing cors domain"),
+                .context("failed parsing cors domain")?,
         );
 
     /*
@@ -114,18 +117,20 @@ async fn main() {
     // run it
     let listener = tokio::net::TcpListener::bind(settings.bind.as_str())
         .await
-        .unwrap();
-    info!(
-        "bevygap_matchmaker_httpd listening on {}",
-        listener.local_addr().unwrap()
-    );
+        .with_context(|| format!("failed to bind HTTP listener on {}", settings.bind))?;
+    let local_addr = listener
+        .local_addr()
+        .context("failed to get HTTP listener local address")?;
+    info!("bevygap_matchmaker_httpd listening on {}", local_addr);
 
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await
-    .unwrap();
+    .context("bevygap_matchmaker_httpd server exited with an error")?;
+
+    Ok(())
 }
 
 async fn index_handler() -> Html<&'static str> {
