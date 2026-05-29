@@ -5,7 +5,7 @@ use base64::prelude::*;
 use bevygap_shared::nats::{cert_digest_lookup_keys, matchmaker_request_subject};
 use bevygap_shared::protocol::*;
 use edgegap_async::{apis::sessions_api::*, apis::Error as EdgegapError, models::SessionModel};
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use lightyear::netcode::ConnectToken;
 use log::*;
 use serde::{de, Deserialize};
@@ -17,19 +17,14 @@ use tokio::time::Instant;
 pub struct SessionRequest {
     /// the ip of the client that wants a session
     pub client_ip: String,
+    /// game-specific room routing intent
+    pub room: RoomSelection,
     /// the rest of the request, with no fixed schema.
     #[allow(dead_code)]
     pub obj: serde_json::Map<String, serde_json::Value>,
 }
 
 impl SessionRequest {
-    pub fn new(client_ip: String) -> Self {
-        Self {
-            client_ip,
-            obj: serde_json::Map::new(),
-        }
-    }
-
     pub fn from_raw(raw: &[u8]) -> Result<SessionRequest, serde_json::Error> {
         let mut parsed: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(raw)?;
 
@@ -39,11 +34,34 @@ impl SessionRequest {
             .as_str()
             .ok_or_else(|| de::Error::custom("client_ip is not a string"))?
             .to_string();
+        let room = parsed
+            .remove("room")
+            .map(serde_json::from_value::<RoomSelection>)
+            .transpose()?
+            .unwrap_or_default();
 
         Ok(SessionRequest {
             client_ip,
+            room,
             obj: parsed,
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DeploymentCapacityPolicy {
+    max_players_per_deployment: u32,
+    max_rooms_per_deployment: u32,
+    max_cpu_percent_per_deployment: f32,
+}
+
+impl DeploymentCapacityPolicy {
+    fn from_settings(settings: &crate::Settings) -> Self {
+        Self {
+            max_players_per_deployment: settings.max_players_per_deployment,
+            max_rooms_per_deployment: settings.max_rooms_per_deployment,
+            max_cpu_percent_per_deployment: settings.max_cpu_percent_per_deployment,
+        }
     }
 }
 
@@ -89,11 +107,27 @@ async fn stream_request_processor(
         return mock_stream_request_processor(state, session_request, responder).await;
     }
 
+    let selected_deployment =
+        select_existing_deployment_for_request(state, &session_request).await?;
+
     let mut session_model = SessionModel::new(state.settings.app_name.clone());
     session_model.ip_list = Some(vec![session_request.client_ip.to_string()]);
     session_model
         .webhook_url
         .clone_from(&state.settings.session_webhook_url);
+    if let Some(deployment) = &selected_deployment {
+        info!(
+            "Routing request to existing deployment {} for room {:?}",
+            deployment.request_id, session_request.room
+        );
+        session_model.deployment_request_id = Some(deployment.request_id.clone());
+        responder
+            .send(SessionRequestFeedback::ProgressReport(format!(
+                "routing to existing deployment {}",
+                deployment.request_id
+            )))
+            .await?;
+    }
     // create session via edgegap api.
     // this gives us our session_id, but could be in a non-Ready state for a while.
     let post_session = session_post(state.configuration(), session_model).await?;
@@ -250,6 +284,129 @@ async fn stream_request_processor(
     // send an empty chunk to finish:
     responder.finish().await?;
     Ok(())
+}
+
+async fn select_existing_deployment_for_request(
+    state: &MatchmakerState,
+    session_request: &SessionRequest,
+) -> Result<Option<DeploymentMetrics>, MyError<SessionPostError>> {
+    let policy = DeploymentCapacityPolicy::from_settings(&state.settings);
+    let deployments = load_deployment_metrics(state).await?;
+    let selected =
+        select_deployment_for_room(deployments.iter(), &session_request.room, policy).cloned();
+    if selected.is_none() {
+        info!(
+            "No existing deployment accepted room {:?}; Edgegap will create a new deployment",
+            session_request.room
+        );
+    }
+    Ok(selected)
+}
+
+async fn load_deployment_metrics(
+    state: &MatchmakerState,
+) -> Result<Vec<DeploymentMetrics>, MyError<SessionPostError>> {
+    let kv = state.nats.kv_deployment_metrics();
+    let mut keys = kv
+        .keys()
+        .await
+        .map_err(|e| MyError::Bevygap(500, format!("failed to list deployment metrics: {e}")))?
+        .boxed();
+    let mut deployments = Vec::new();
+
+    while let Some(key) = keys
+        .try_next()
+        .await
+        .map_err(|e| MyError::Bevygap(500, format!("failed to read deployment metric key: {e}")))?
+    {
+        let Some(value) = kv.get(&key).await.map_err(|e| {
+            MyError::Bevygap(500, format!("failed to read deployment metrics {key}: {e}"))
+        })?
+        else {
+            continue;
+        };
+        match serde_json::from_slice::<DeploymentMetrics>(value.as_ref()) {
+            Ok(metrics) => deployments.push(metrics),
+            Err(error) => warn!("Ignoring invalid deployment metrics at {key}: {error}"),
+        }
+    }
+
+    Ok(deployments)
+}
+
+fn select_deployment_for_room<'a>(
+    deployments: impl IntoIterator<Item = &'a DeploymentMetrics>,
+    room: &RoomSelection,
+    policy: DeploymentCapacityPolicy,
+) -> Option<&'a DeploymentMetrics> {
+    let room_key = room.room_key();
+    deployments
+        .into_iter()
+        .filter(|deployment| {
+            deployment_accepts_request(deployment, room, room_key.as_deref(), policy)
+        })
+        .min_by(|left, right| {
+            requested_room_penalty(left, room, room_key.as_deref())
+                .cmp(&requested_room_penalty(right, room, room_key.as_deref()))
+                .then_with(|| {
+                    left.total_players
+                        .cmp(&right.total_players)
+                        .then_with(|| left.room_count().cmp(&right.room_count()))
+                        .then_with(|| left.request_id.cmp(&right.request_id))
+                })
+        })
+}
+
+fn requested_room_penalty(
+    deployment: &DeploymentMetrics,
+    room: &RoomSelection,
+    room_key: Option<&str>,
+) -> u8 {
+    if matches!(room, RoomSelection::Code(_) | RoomSelection::Id(_))
+        && room_key.is_some_and(|key| deployment.rooms.iter().any(|room| room.key == key))
+    {
+        0
+    } else {
+        1
+    }
+}
+
+fn deployment_accepts_request(
+    deployment: &DeploymentMetrics,
+    room: &RoomSelection,
+    room_key: Option<&str>,
+    policy: DeploymentCapacityPolicy,
+) -> bool {
+    if !deployment.has_deployment_player_capacity(policy.max_players_per_deployment) {
+        return false;
+    }
+    if deployment
+        .cpu_percent
+        .is_some_and(|cpu| cpu >= policy.max_cpu_percent_per_deployment)
+    {
+        return false;
+    }
+
+    match room {
+        RoomSelection::Auto => {
+            deployment
+                .rooms
+                .iter()
+                .any(|room| !room.private && room.has_player_capacity())
+                || deployment.has_room_capacity(policy.max_rooms_per_deployment)
+        }
+        RoomSelection::New => deployment.has_room_capacity(policy.max_rooms_per_deployment),
+        RoomSelection::Code(_) | RoomSelection::Id(_) => {
+            let Some(room_key) = room_key else {
+                return false;
+            };
+            if let Some(existing) = deployment.rooms.iter().find(|room| room.key == room_key) {
+                existing.has_player_capacity()
+            } else {
+                deployment.has_room_capacity(policy.max_rooms_per_deployment)
+            }
+        }
+    }
 }
 
 async fn mock_stream_request_processor(
@@ -522,5 +679,128 @@ impl<T> From<NatsError<async_nats::client::PublishErrorKind>> for MyError<T> {
 impl<T> From<async_nats::Error> for MyError<T> {
     fn from(err: async_nats::Error) -> Self {
         MyError::Nats(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn policy() -> DeploymentCapacityPolicy {
+        DeploymentCapacityPolicy {
+            max_players_per_deployment: 100,
+            max_rooms_per_deployment: 4,
+            max_cpu_percent_per_deployment: 90.0,
+        }
+    }
+
+    fn deployment(
+        request_id: &str,
+        total_players: u32,
+        cpu_percent: Option<f32>,
+        rooms: Vec<DeploymentRoomMetrics>,
+    ) -> DeploymentMetrics {
+        DeploymentMetrics {
+            request_id: request_id.to_string(),
+            public_ip: "127.0.0.1".to_string(),
+            external_port: Some(7777),
+            total_players,
+            max_players: 100,
+            max_rooms: 4,
+            cpu_percent,
+            rooms,
+        }
+    }
+
+    fn room(key: &str, private: bool, players: u32, max_players: u32) -> DeploymentRoomMetrics {
+        DeploymentRoomMetrics {
+            key: key.to_string(),
+            private,
+            players,
+            max_players,
+        }
+    }
+
+    #[test]
+    fn auto_prefers_existing_public_room_capacity() {
+        let deployments = vec![
+            deployment("full", 50, None, vec![room("id:0", false, 50, 50)]),
+            deployment("open", 10, None, vec![room("id:0", false, 10, 50)]),
+        ];
+
+        let selected =
+            select_deployment_for_room(deployments.iter(), &RoomSelection::Auto, policy()).unwrap();
+
+        assert_eq!(selected.request_id, "open");
+    }
+
+    #[test]
+    fn private_code_prefers_deployment_hosting_that_code() {
+        let deployments = vec![
+            deployment("other", 1, None, vec![room("code:ZZZZ", true, 1, 50)]),
+            deployment("target", 20, None, vec![room("code:ABCD", true, 20, 50)]),
+        ];
+
+        let selected = select_deployment_for_room(
+            deployments.iter(),
+            &RoomSelection::Code("abcd".to_string()),
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "target");
+    }
+
+    #[test]
+    fn private_code_can_create_room_on_warm_deployment() {
+        let deployments = vec![deployment(
+            "warm",
+            10,
+            None,
+            vec![room("id:0", false, 10, 50)],
+        )];
+
+        let selected = select_deployment_for_room(
+            deployments.iter(),
+            &RoomSelection::Code("ROOM".to_string()),
+            policy(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.request_id, "warm");
+    }
+
+    #[test]
+    fn new_room_rejects_full_room_count() {
+        let deployments = vec![deployment(
+            "full-rooms",
+            10,
+            None,
+            vec![
+                room("id:0", false, 1, 50),
+                room("id:1", false, 1, 50),
+                room("id:2", false, 1, 50),
+                room("id:3", false, 1, 50),
+            ],
+        )];
+
+        assert!(
+            select_deployment_for_room(deployments.iter(), &RoomSelection::New, policy()).is_none()
+        );
+    }
+
+    #[test]
+    fn high_cpu_deployment_is_rejected() {
+        let deployments = vec![deployment(
+            "hot",
+            1,
+            Some(95.0),
+            vec![room("id:0", false, 1, 50)],
+        )];
+
+        assert!(
+            select_deployment_for_room(deployments.iter(), &RoomSelection::Auto, policy())
+                .is_none()
+        );
     }
 }

@@ -13,6 +13,7 @@ pub struct BevygapNats {
     kv_c2s: jetstream::kv::Store,
     kv_cert_digests: jetstream::kv::Store,
     kv_active_connections: jetstream::kv::Store,
+    kv_deployment_metrics: jetstream::kv::Store,
     kv_unclaimed_sessions: jetstream::kv::Store,
     delete_session_stream: Stream,
     delete_session_subject_prefix: String,
@@ -23,6 +24,7 @@ const SESSION_MAPPING_TTL_MS_ENV: &str = "BEVYGAP_SESSION_MAPPING_TTL_MS";
 const UNCLAIMED_SESSION_TTL_SECS_ENV: &str = "BEVYGAP_UNCLAIMED_SESSION_TTL_SECS";
 const ACTIVE_CONNECTION_TTL_SECS_ENV: &str = "BEVYGAP_ACTIVE_CONNECTION_TTL_SECS";
 const CERT_DIGEST_TTL_SECS_ENV: &str = "BEVYGAP_CERT_DIGEST_TTL_SECS";
+const DEPLOYMENT_METRICS_TTL_SECS_ENV: &str = "BEVYGAP_DEPLOYMENT_METRICS_TTL_SECS";
 
 const DELETE_SESSION_SUBJECT_BASE: &str = "edgegap_delete_session_q";
 const DELETE_SESSION_STREAM_BASE: &str = "DELETE_SESSION_STREAM";
@@ -102,6 +104,10 @@ pub fn cert_digest_public_ip_key(public_ip: &str) -> String {
     format!("ip.{}", sanitize_kv_token(public_ip))
 }
 
+pub fn deployment_metrics_key(request_id: &str) -> String {
+    format!("deployment.{}", sanitize_kv_token(request_id))
+}
+
 /// Ordered keys used to publish and resolve WebTransport certificate digests.
 ///
 /// Deployment request id is preferred because it is globally unique. Endpoint
@@ -176,6 +182,7 @@ impl BevygapNats {
         let (kv_s2c, kv_c2s) = Self::create_kv_buckets_for_session_mappings(client.clone()).await?;
         let kv_active_connections = Self::create_kv_active_connections(client.clone()).await?;
         let kv_cert_digests = Self::create_kv_cert_digests(client.clone()).await?;
+        let kv_deployment_metrics = Self::create_kv_deployment_metrics(client.clone()).await?;
         let kv_unclaimed_sessions = Self::create_kv_unclaimed_sessions(client.clone()).await?;
         let delete_session_stream = Self::create_session_delete_queue(&client).await?;
         let delete_session_subject_prefix = delete_session_subject_prefix();
@@ -185,6 +192,7 @@ impl BevygapNats {
             kv_c2s,
             kv_cert_digests,
             kv_active_connections,
+            kv_deployment_metrics,
             kv_unclaimed_sessions,
             delete_session_stream,
             delete_session_subject_prefix,
@@ -208,6 +216,9 @@ impl BevygapNats {
     }
     pub fn kv_cert_digests(&self) -> &jetstream::kv::Store {
         &self.kv_cert_digests
+    }
+    pub fn kv_deployment_metrics(&self) -> &jetstream::kv::Store {
+        &self.kv_deployment_metrics
     }
     pub fn delete_session_stream(&self) -> &Stream {
         &self.delete_session_stream
@@ -409,6 +420,24 @@ impl BevygapNats {
         Ok(kv)
     }
 
+    pub async fn create_kv_deployment_metrics(
+        client: Client,
+    ) -> Result<jetstream::kv::Store, async_nats::Error> {
+        let jetstream = jetstream::new(client);
+        let kv = jetstream
+            .create_key_value(async_nats::jetstream::kv::Config {
+                bucket: nats_bucket_name("deployment_metrics"),
+                description:
+                    "Game-server room and deployment capacity heartbeats used by matchmaker"
+                        .to_string(),
+                max_age: env_duration_secs(DEPLOYMENT_METRICS_TTL_SECS_ENV, 30),
+                max_value_size: 16 * 1024,
+                ..Default::default()
+            })
+            .await?;
+        Ok(kv)
+    }
+
     /// Creates two buckets for mapping between LY client ids and Edgegap session tokens
     async fn create_kv_buckets_for_session_mappings(
         client: Client,
@@ -488,6 +517,10 @@ mod tests {
         assert_eq!(
             matchmaker_request_subject("lightrider", "dev"),
             "matchmaker.request.lightrider.dev"
+        );
+        assert_eq!(
+            deployment_metrics_key("deploy/123"),
+            "deployment.deploy_123"
         );
     }
 

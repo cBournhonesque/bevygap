@@ -111,16 +111,17 @@ async fn handle_socket_inner(
     state: Arc<AppState>,
 ) -> Result<(), String> {
     // Await the request message the client should send once the websocket is connected.
-    let request_session = read_initial_request_message(socket, Duration::from_secs(10)).await?;
+    let mut request_session = read_initial_request_message(socket, Duration::from_secs(10)).await?;
+    if request_session.client_ip.is_none() {
+        request_session.client_ip = Some(client_ip);
+    }
 
     let (game_name, game_ver) = request_session.game_name_and_version()?;
 
     let subject = matchmaker_request_subject(&game_name, &game_ver);
 
-    // this should be safe because of our regex check on name and version..
-    let payload = format!(
-        "{{\"client_ip\":\"{client_ip}\", \"game\":\"{game_name}\", \"version\":\"{game_ver}\"}}"
-    );
+    let payload = serde_json::to_string(&request_session)
+        .map_err(|e| format!("Failed to serialize matchmaker request: {e}"))?;
 
     info!("Sending request to {subject} with payload {payload}");
 

@@ -2,6 +2,7 @@ use crate::bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 use async_nats::jetstream::kv::Operation;
 use bevy::prelude::*;
 use bevygap_shared::nats::{cert_digest_lookup_keys, *};
+use bevygap_shared::protocol::DeploymentMetrics;
 use futures::StreamExt;
 use lightyear::connection::client::{Connected, Disconnected};
 use lightyear::connection::server::Start;
@@ -69,6 +70,7 @@ impl Plugin for BevygapServerPlugin {
 
         app.add_observer(handle_lightyear_client_connect);
         app.add_observer(handle_lightyear_client_disconnect);
+        app.add_observer(handle_deployment_metrics_update);
     }
 }
 
@@ -287,6 +289,7 @@ enum NatsEvent {
     ClientDisconnected(u64),
     ArbitriumContext(ArbitriumContext),
     CertDigest(Vec<String>, String),
+    DeploymentMetrics(DeploymentMetrics),
 }
 
 #[derive(Resource)]
@@ -316,6 +319,46 @@ impl NatsSender {
             error!("Unable to send NatsEvent for cert_digest: {error:?}");
         }
     }
+
+    fn deployment_metrics(&self, metrics: DeploymentMetrics) {
+        if let Err(error) = self.0.send(NatsEvent::DeploymentMetrics(metrics)) {
+            error!("Unable to send NatsEvent for deployment_metrics: {error:?}");
+        }
+    }
+}
+
+#[derive(Debug, Event, Clone)]
+pub struct BevygapDeploymentMetrics {
+    pub total_players: u32,
+    pub max_players: u32,
+    pub max_rooms: u32,
+    pub cpu_percent: Option<f32>,
+    pub rooms: Vec<bevygap_shared::protocol::DeploymentRoomMetrics>,
+}
+
+fn handle_deployment_metrics_update(
+    trigger: On<BevygapDeploymentMetrics>,
+    context: Option<Res<ArbitriumContext>>,
+    nats_sender: Option<Res<NatsSender>>,
+) {
+    let Some(context) = context else {
+        return;
+    };
+    let Some(nats_sender) = nats_sender else {
+        return;
+    };
+    let metrics = trigger.event();
+    let deployment_metrics = DeploymentMetrics {
+        request_id: context.request_id(),
+        public_ip: context.public_ip(),
+        external_port: context.game_external_port(),
+        total_players: metrics.total_players,
+        max_players: metrics.max_players,
+        max_rooms: metrics.max_rooms,
+        cpu_percent: metrics.cpu_percent,
+        rooms: metrics.rooms.clone(),
+    };
+    nats_sender.deployment_metrics(deployment_metrics);
 }
 
 /// Exists purely to allow us to trigger an event via command queue.
@@ -352,6 +395,7 @@ fn setup_nats(runtime: ResMut<TokioTasksRuntime>, mut commands: Commands) {
         let kv_c2s = bgnats.kv_c2s().clone();
         let kv_sessions = bgnats.kv_active_connections().clone();
         let kv_cert_digests = bgnats.kv_cert_digests().clone();
+        let kv_deployment_metrics = bgnats.kv_deployment_metrics().clone();
         let client = bgnats.client().clone();
 
         ctx.run_on_main_thread(move |ctx| {
@@ -459,6 +503,28 @@ fn setup_nats(runtime: ResMut<TokioTasksRuntime>, mut commands: Commands) {
                         {
                             error!("Failed to put cert digest in KV: {error}");
                         }
+                    }
+                }
+                NatsEvent::DeploymentMetrics(metrics) => {
+                    let key = deployment_metrics_key(&metrics.request_id);
+                    let payload = match serde_json::to_vec(&metrics) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            error!("Failed to serialize deployment metrics: {error}");
+                            continue;
+                        }
+                    };
+                    if let Err(error) = kv_deployment_metrics.put(key.clone(), payload.into()).await
+                    {
+                        error!("Failed to put deployment metrics for {key}: {error}");
+                    } else {
+                        info!(
+                            "Deployment metrics put: key={key}, players={}/{}, rooms={}/{}",
+                            metrics.total_players,
+                            metrics.max_players,
+                            metrics.rooms.len(),
+                            metrics.max_rooms
+                        );
                     }
                 }
             }

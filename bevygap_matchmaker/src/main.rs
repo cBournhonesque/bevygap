@@ -78,6 +78,15 @@ pub struct Settings {
     /// Artificial delay before reporting a mock session as ready.
     #[arg(long, default_value_t = 100)]
     mock_ready_delay_ms: u64,
+    /// Maximum total players that the matchmaker will route into one deployment.
+    #[arg(long, default_value_t = 800)]
+    max_players_per_deployment: u32,
+    /// Maximum active rooms that the matchmaker will route into one deployment.
+    #[arg(long, default_value_t = 16)]
+    max_rooms_per_deployment: u32,
+    /// Maximum reported CPU percentage allowed before routing to a new deployment.
+    #[arg(long, default_value_t = 85.0)]
+    max_cpu_percent_per_deployment: f32,
 }
 
 impl Settings {

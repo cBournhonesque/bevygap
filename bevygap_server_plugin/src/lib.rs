@@ -7,6 +7,8 @@ mod plugin;
 pub mod prelude {
     pub use crate::arbitrium_env::ArbitriumEnv;
     pub use crate::edgegap_context::ArbitriumContext;
+    pub use crate::plugin::BevygapDeploymentMetrics;
     pub use crate::plugin::BevygapReady;
     pub use crate::plugin::BevygapServerPlugin;
+    pub use bevygap_shared::protocol::DeploymentRoomMetrics;
 }

@@ -15,6 +15,7 @@ pub mod prelude {
     pub use super::BevygapClientConfig;
     pub use super::BevygapClientPlugin;
     pub use super::BevygapClientState;
+    pub use bevygap_shared::protocol::RoomSelection;
 }
 mod traits;
 
@@ -60,6 +61,10 @@ pub struct BevygapClientConfig {
     pub game_name: String,
     /// The version of the game, used in the matchmaker request.
     pub game_version: String,
+    /// Optional game room routing intent. The game still sends its normal
+    /// room-join message after connecting; this only helps the matchmaker pick
+    /// an existing deployment when possible.
+    pub room: RoomSelection,
 }
 
 impl Default for BevygapClientConfig {
@@ -69,6 +74,7 @@ impl Default for BevygapClientConfig {
             fake_client_ip: None,
             game_name: "bevygap-spaceships".to_string(),
             game_version: "1".to_string(),
+            room: RoomSelection::Auto,
         }
     }
 }
@@ -142,6 +148,7 @@ fn handle_matchmaker_response(
                             client_ip: config.fake_client_ip.clone(),
                             game: config.game_name.clone(),
                             version: config.game_version.clone(),
+                            room: Some(config.room.clone()),
                         };
                         let payload = serde_json::to_string(&req).unwrap();
                         info!("Sending payload: {payload}");
