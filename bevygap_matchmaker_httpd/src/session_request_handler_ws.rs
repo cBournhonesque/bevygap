@@ -1,4 +1,5 @@
 use async_nats::client::PublishErrorKind;
+use async_nats::StatusCode;
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use axum::{
@@ -134,7 +135,7 @@ async fn handle_socket_inner(
     // TODO this publish needs to "opt in to no_responder messages" somehow, per
     // https://docs.nats.io/reference/reference-protocols/nats-protocol
     client
-        .publish_with_reply(subject, reply_inbox, payload.into())
+        .publish_with_reply(subject.clone(), reply_inbox, payload.into())
         .await
         .map_err(|e| match e.kind() {
             PublishErrorKind::Send => "Failed to send mm request".to_string(),
@@ -147,6 +148,24 @@ async fn handle_socket_inner(
     let mut chunks = 0usize;
     let mut saw_terminal_feedback = false;
     while let Some(msg) = response_subscriber.next().await {
+        if let Some(status) = msg.status {
+            let description = msg
+                .description
+                .as_deref()
+                .filter(|description| !description.trim().is_empty())
+                .unwrap_or("no description");
+            let message = if status == StatusCode::NO_RESPONDERS {
+                format!(
+                    "No matchmaker worker responded on NATS subject '{subject}'. Check that bevygap_matchmaker is running with the same game/version requested by the client."
+                )
+            } else {
+                format!(
+                    "NATS returned status {status} ({description}) on matchmaker subject '{subject}'"
+                )
+            };
+            warn!("{message}");
+            return Err(message);
+        }
         if msg.payload.is_empty() {
             if saw_terminal_feedback {
                 info!("matchmaker response stream finished after {chunks} chunks");

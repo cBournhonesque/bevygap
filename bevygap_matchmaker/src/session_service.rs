@@ -193,6 +193,7 @@ async fn session_responder(
     // * deployment_request_id
 
     let mut session_model = SessionModel::new(state.settings.app_name.clone());
+    session_model.version_name = Some(state.settings.app_version.clone());
     session_model.ip_list = Some(vec![session_request.client_ip.to_string()]);
     session_model
         .webhook_url
